@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">⏳ FIFO Waiting Queue Management</h3>
+      <p class="card-subtitle">
+        First-In, First-Out (FIFO) queue implemented with Python's <code>collections.deque</code> for guaranteed <strong>O(1)</strong> enqueue and dequeue.
+      </p>
+    </div>
+
+    <span class="badge badge-purple" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">
+      {{ queue_count }} Vehicle(s) in Queue
+    </span>
+  </div>
+
+  <div class="card-body">
+
+    <!-- EDUCATIONAL DSA CALLOUT -->
+    <div class="alert alert-info" style="margin-bottom: 1.5rem; display: block; border-left: 4px solid var(--primary);">
+      <h4 style="font-weight: 700; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.5rem;">
+        <span>💡 Academic DSA Explanation: Why <code>collections.deque</code> instead of Python <code>list</code>?</span>
+      </h4>
+      <p style="font-size: 0.82rem; line-height: 1.6; margin-bottom: 0.5rem;">
+        In a standard Python <code>list</code>, removing the first waiting element via <code>list.pop(0)</code> takes <strong>O(N)</strong> time because all subsequent $N-1$ elements must be shifted in contiguous memory.
+        In contrast, <strong><code>collections.deque</code></strong> (Double-Ended Queue) is implemented in C as a doubly linked list of memory blocks. Both <strong>enqueue (<code>append()</code>)</strong> and <strong>dequeue (<code>popleft()</code>)</strong> are guaranteed <strong>O(1)</strong> constant time operations!
+      </p>
+      <div style="font-size: 0.8rem; background: rgba(255, 255, 255, 0.7); padding: 0.4rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--info-border);">
+        <strong>🔄 Auto-Dispatch Trigger:</strong> When any parked vehicle exits or an unreserved slot becomes available, the manager instantly inspects the waiting queue in strict FIFO order and assigns the slot to the first eligible vehicle!
+      </div>
+    </div>
+
+    <!-- QUEUE FLOW VISUALIZATION -->
+    {% if queue_items %}
+      <h4 style="font-size: 0.88rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.75rem;">
+        Visual FIFO Flow (Front to Rear):
+      </h4>
+      <div class="queue-flow-container">
+        {% for item in queue_items %}
+          <div class="queue-node {{ 'head-node' if loop.first else '' }}">
+            <div class="queue-pos-badge">
+              {{ '👑 HEAD / FRONT (#1)' if loop.first else 'QUEUE #' ~ item.queue_position }}
+            </div>
+            <div class="queue-veh-number">{{ item.vehicle_number }}</div>
+            <div class="queue-category">Category: <strong>{{ item.category }}</strong></div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem;">
+              Queued: {{ item.created_at.split(' ')[1] }}
+            </div>
+          </div>
+          {% if not loop.last %}
+            <div class="queue-arrow">&rarr;</div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <!-- QUEUE TABLE -->
+    <div class="table-responsive" style="margin-top: 1rem;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Position</th>
+            <th>Vehicle Number</th>
+            <th>Category</th>
+            <th>Driver Contact</th>
+            <th>Queued Timestamp</th>
+            <th>Waiting Since</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if queue_items %}
+            {% for item in queue_items %}
+              <tr>
+                <td>
+                  <span class="badge {{ 'badge-primary' if loop.first else 'badge-purple' }}" style="font-weight: 800;">
+                    {{ '#1 NEXT IN LINE' if loop.first else '#' ~ item.queue_position }}
+                  </span>
+                </td>
+                <td>
+                  <strong style="font-size: 0.95rem;">{{ item.vehicle_number }}</strong>
+                </td>
+                <td>
+                  <span class="badge badge-info">{{ item.category }}</span>
+                </td>
+                <td style="color: var(--text-muted); font-size: 0.82rem;">
+                  {{ item.driver_contact or '—' }}
+                </td>
+                <td style="font-size: 0.82rem; color: var(--text-muted);">
+                  {{ item.created_at }}
+                </td>
+                <td>
+                  <span class="badge badge-warning" data-entry-time="{{ item.created_at }}">Waiting...</span>
+                </td>
+                <td>
+                  <form action="{{ url_for('remove_from_queue') }}" method="POST" style="display: inline;" onsubmit="return confirm('Remove vehicle {{ item.vehicle_number }} from waiting queue?');">
+                    <input type="hidden" name="vehicle_number" value="{{ item.vehicle_number }}">
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                      <span>Remove</span>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="7" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                <div style="font-size: 2.25rem; margin-bottom: 0.5rem;">✨</div>
+                <h4 style="font-weight: 700; color: var(--text-main);">The FIFO Waiting Queue is currently empty!</h4>
+                <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+                  Vehicles are placed into this queue automatically when all eligible parking slots for their category are fully occupied.
+                </p>
+                <div style="margin-top: 1rem;">
+                  <button class="btn btn-secondary btn-sm" onclick="openParkModal()">
+                    Park a Vehicle Now
+                  </button>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

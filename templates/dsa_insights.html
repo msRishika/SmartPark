@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">🧠 Advanced DSA Architecture & Faculty Viva Guide</h3>
+      <p class="card-subtitle">
+        Comprehensive academic breakdown of Data Structures & Algorithms implemented in <code>parking_manager.py</code>.
+      </p>
+    </div>
+
+    <span class="badge badge-purple" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">
+      College Viva Ready
+    </span>
+  </div>
+
+  <div class="card-body">
+
+    <!-- MASTER BIG-O SUMMARY TABLE -->
+    <h4 style="font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem;">1. Master Time & Space Complexity Matrix</h4>
+    <div class="table-responsive" style="margin-bottom: 2rem;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>DSA Concept</th>
+            <th>Python Structure</th>
+            <th>Applied Feature</th>
+            <th>Best Case</th>
+            <th>Average Case</th>
+            <th>Worst Case</th>
+            <th>Space Complexity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Hashing</strong></td>
+            <td><code>dict</code> (Hash Table)</td>
+            <td>Active vehicle lookup & duplicate rejection</td>
+            <td><code style="color: var(--success-text);">O(1)</code></td>
+            <td><code style="color: var(--success-text);">O(1)</code></td>
+            <td><code style="color: var(--warning-text);">O(N)</code> (Rare collision)</td>
+            <td><code>O(N)</code></td>
+          </tr>
+          <tr>
+            <td><strong>Searching</strong></td>
+            <td>Sequential Array Traversal</td>
+            <td>First eligible available parking slot allocation</td>
+            <td><code style="color: var(--success-text);">O(1)</code></td>
+            <td><code style="color: var(--primary);">O(N/2) ~ O(N)</code></td>
+            <td><code style="color: var(--danger-text);">O(N)</code></td>
+            <td><code>O(1)</code> Auxiliary</td>
+          </tr>
+          <tr>
+            <td><strong>Queue</strong></td>
+            <td><code>collections.deque</code></td>
+            <td>FIFO Waiting queue (Enqueue & Dequeue)</td>
+            <td><code style="color: var(--success-text);">O(1)</code></td>
+            <td><code style="color: var(--success-text);">O(1)</code></td>
+            <td><code style="color: var(--success-text);">O(1)</code></td>
+            <td><code>O(M)</code></td>
+          </tr>
+          <tr>
+            <td><strong>Merge Sort</strong></td>
+            <td>Recursive Divide & Conquer</td>
+            <td>Sort parking history by vehicle, time, duration, fee</td>
+            <td><code style="color: var(--primary);">O(N log N)</code></td>
+            <td><code style="color: var(--primary);">O(N log N)</code></td>
+            <td><code style="color: var(--primary);">O(N log N)</code></td>
+            <td><code>O(N)</code> Auxiliary</td>
+          </tr>
+          <tr>
+            <td><strong>Quick Sort</strong></td>
+            <td>Partition-based Sorting</td>
+            <td>Alternative history sorting algorithm</td>
+            <td><code style="color: var(--primary);">O(N log N)</code></td>
+            <td><code style="color: var(--primary);">O(N log N)</code></td>
+            <td><code style="color: var(--danger-text);">O(N²)</code> (Poor pivot)</td>
+            <td><code>O(log N)</code> Auxiliary</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 4 DEEP DIVE PILLARS -->
+    <h4 style="font-size: 1rem; font-weight: 700; margin-bottom: 1rem;">2. In-Depth Algorithm Explanations</h4>
+    
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+      
+      <!-- PILLAR 1: HASHING -->
+      <div class="card" style="margin-bottom: 0;">
+        <div class="card-header" style="background: #f8fafc;">
+          <h4 class="card-title" style="font-size: 0.95rem;">
+            <span>1️⃣ Hashing (Dictionary Lookup)</span>
+            <span class="badge badge-success">O(1)</span>
+          </h4>
+        </div>
+        <div class="card-body">
+          <p style="font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.75rem;">
+            <strong>Implementation:</strong> <code>self.active_vehicles = {}</code> in <code>parking_manager.py</code>.
+          </p>
+          <p style="font-size: 0.85rem; line-height: 1.6; color: var(--text-muted); margin-bottom: 0.75rem;">
+            When a vehicle attempts entry, instead of scanning all 30 slots or performing a slow SQL database scan, the system hashes the normalized vehicle registration number (e.g. <code>hash("KA-01-AB-1234")</code>) to achieve <strong>instant O(1) duplicate detection</strong>.
+          </p>
+          <div class="code-box">
+# O(1) Duplicate Check in parking_manager.py:
+if normalized_num in self.active_vehicles:
+    return {
+        "success": False,
+        "message": f"Duplicate vehicle! Already in Slot..."
+    }
+          </div>
+        </div>
+      </div>
+
+      <!-- PILLAR 2: LINEAR SEARCH -->
+      <div class="card" style="margin-bottom: 0;">
+        <div class="card-header" style="background: #f8fafc;">
+          <h4 class="card-title" style="font-size: 0.95rem;">
+            <span>2️⃣ Linear Search (Slot Allocation)</span>
+            <span class="badge badge-primary">O(N)</span>
+          </h4>
+        </div>
+        <div class="card-body">
+          <p style="font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.75rem;">
+            <strong>Implementation:</strong> <code>find_first_available_slot(category)</code>.
+          </p>
+          <p style="font-size: 0.85rem; line-height: 1.6; color: var(--text-muted); margin-bottom: 0.75rem;">
+            Iterates through the 30 fixed parking slots sequentially. Checks both availability status and category eligibility (e.g. EV fallback, Two-Wheeler restriction).
+          </p>
+          <ul style="font-size: 0.82rem; line-height: 1.6; margin-left: 1.25rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+            <li><strong>Best Case:</strong> O(1) if Slot S-01 is available.</li>
+            <li><strong>Worst Case:</strong> O(N) if only Slot S-30 is free or if parking is full.</li>
+          </ul>
+          <div class="code-box">
+for slot in self.slots: # N = 30 slots
+    if slot.is_available() and slot.is_eligible_for(cat):
+        return slot
+return None # Parking full -> sends to queue
+          </div>
+        </div>
+      </div>
+
+      <!-- PILLAR 3: FIFO QUEUE -->
+      <div class="card" style="margin-bottom: 0;">
+        <div class="card-header" style="background: #f8fafc;">
+          <h4 class="card-title" style="font-size: 0.95rem;">
+            <span>3️⃣ FIFO Waiting Queue (Deque)</span>
+            <span class="badge badge-purple">O(1)</span>
+          </h4>
+        </div>
+        <div class="card-body">
+          <p style="font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.75rem;">
+            <strong>Implementation:</strong> <code>self.waiting_queue = deque()</code> from <code>collections</code>.
+          </p>
+          <p style="font-size: 0.85rem; line-height: 1.6; color: var(--text-muted); margin-bottom: 0.75rem;">
+            <strong>Why not <code>list</code>?</strong> In Python, <code>list.pop(0)</code> takes <strong>O(N)</strong> because all remaining elements must shift. <code>collections.deque</code> is a doubly linked block list, guaranteeing <strong>O(1)</strong> for both <code>append()</code> and <code>popleft()</code>.
+          </p>
+          <div class="code-box">
+# O(1) Enqueue when parking is full:
+self.waiting_queue.append(queue_item)
+
+# O(1) Dequeue on vehicle exit:
+assigned_item = self.waiting_queue.popleft()
+          </div>
+        </div>
+      </div>
+
+      <!-- PILLAR 4: SORTING -->
+      <div class="card" style="margin-bottom: 0;">
+        <div class="card-header" style="background: #f8fafc;">
+          <h4 class="card-title" style="font-size: 0.95rem;">
+            <span>4️⃣ Merge Sort & Quick Sort</span>
+            <span class="badge badge-info">O(N log N)</span>
+          </h4>
+        </div>
+        <div class="card-body">
+          <p style="font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.75rem;">
+            <strong>Implementation:</strong> Custom recursive divide-and-conquer in <code>parking_manager.py</code>.
+          </p>
+          <p style="font-size: 0.85rem; line-height: 1.6; color: var(--text-muted); margin-bottom: 0.75rem;">
+            Sorts historical records by vehicle number, entry time, duration, or fee. 
+            Recurrence relation: \( T(N) = 2T(N/2) + O(N) \implies O(N \log N) \).
+            Merge Sort is chosen because it guarantees stable sorting with consistent \( O(N \log N) \) worst-case time.
+          </p>
+          <div class="code-box">
+def _msort(arr):
+    if len(arr) <= 1: return arr
+    mid = len(arr) // 2
+    return _merge(_msort(arr[:mid]), _msort(arr[mid:]))
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FACULTY DEMONSTRATION & VIVA GUIDE -->
+    <div class="card" style="border-left: 4px solid var(--primary); margin-bottom: 0;">
+      <div class="card-header" style="background: #f8fafc;">
+        <h4 class="card-title">🎓 Viva Demonstration Step-by-Step Script for Faculty</h4>
+      </div>
+      <div class="card-body">
+        <ol style="margin-left: 1.5rem; line-height: 1.8; font-size: 0.88rem;">
+          <li>
+            <strong>Demonstrate Hashing (O(1)):</strong>
+            Click "➕ Park Vehicle" and park vehicle <code>KA-01-AB-1234</code>. Now try to park <code>KA-01-AB-1234</code> again. Show the examiner that the system instantly detects and blocks the duplicate via the Python dictionary hash map in $O(1)$ time without searching through the database or slot list.
+          </li>
+          <li>
+            <strong>Demonstrate Linear Search (O(N)):</strong>
+            Park several vehicles in sequence. Show that the system performs Linear Search on the 30-slot array, assigning the first available eligible slot (S-01, S-02, ...). Point to the live probe counter on the Dashboard telemetry widget showing the exact probe steps taken.
+          </li>
+          <li>
+            <strong>Demonstrate FIFO Waiting Queue (collections.deque O(1)):</strong>
+            Fill up the Two-Wheeler slots (Slots S-01 to S-06) or click the <strong>⚡ Demo Data</strong> button at the top right. Try parking another Two-Wheeler. Show that it is enqueued into the FIFO queue at Position #1. Open the <strong>⏳ FIFO Queue</strong> page to view the front-to-rear queue visualization.
+          </li>
+          <li>
+            <strong>Demonstrate Automatic Queue Allocation on Vehicle Exit:</strong>
+            Now exit any of the parked Two-Wheelers. Show the examiner that the system automatically dequeues the waiting vehicle via <code>deque.popleft()</code> ($O(1)$) and immediately parks it in the freed slot!
+          </li>
+          <li>
+            <strong>Demonstrate Merge Sort & Quick Sort (O(N log N)):</strong>
+            Go to the <strong>📜 Parking History</strong> page. Select "Sort by: Duration (Minutes)", switch between "Merge Sort" and "Quick Sort", and click "Apply". Show the telemetry banner displaying the exact number of comparisons executed and the theoretical $O(N \log N)$ complexity.
+          </li>
+        </ol>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

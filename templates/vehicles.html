@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">🚗 Active Parked Vehicles Directory</h3>
+      <p class="card-subtitle">
+        Active vehicles are managed in an in-memory <strong>Python Hash Map (dict)</strong> providing <strong>O(1)</strong> lookup time.
+      </p>
+    </div>
+
+    <div style="display: flex; gap: 0.75rem; align-items: center;">
+      <button class="btn btn-primary btn-sm" onclick="openParkModal()">
+        <span>➕ Park New Vehicle</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="card-body">
+    <!-- SEARCH & CONTROLS -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem;">
+      <form action="{{ url_for('vehicles') }}" method="GET" style="display: flex; gap: 0.5rem; max-width: 420px; width: 100%;">
+        <input type="text" class="form-control" name="q" value="{{ search_query }}" placeholder="Search by vehicle # (O(1) hash lookup) or slot..." autocomplete="off">
+        <button type="submit" class="btn btn-secondary">Search</button>
+        {% if search_query %}
+          <a href="{{ url_for('vehicles') }}" class="btn btn-secondary" title="Clear filter">Clear</a>
+        {% endif %}
+      </form>
+
+      <div style="font-size: 0.85rem; color: var(--text-muted);">
+        Showing <strong>{{ active_vehicles|length }}</strong> of <strong>{{ total_active }}</strong> active parked vehicle(s)
+      </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Slot</th>
+            <th>Vehicle Number</th>
+            <th>Category</th>
+            <th>Driver Contact</th>
+            <th>Entry Timestamp</th>
+            <th>Live Duration</th>
+            <th>DSA Lookup</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if active_vehicles %}
+            {% for veh in active_vehicles %}
+              <tr>
+                <td>
+                  <span class="badge badge-primary" style="font-weight: 800; font-size: 0.82rem;">
+                    {{ veh.slot_number }}
+                  </span>
+                </td>
+                <td>
+                  <strong style="font-size: 0.95rem; letter-spacing: 0.02em;">{{ veh.vehicle_number }}</strong>
+                </td>
+                <td>
+                  <span class="badge badge-info">{{ veh.category }}</span>
+                </td>
+                <td style="color: var(--text-muted); font-size: 0.82rem;">
+                  {{ veh.driver_contact or '—' }}
+                </td>
+                <td style="font-size: 0.82rem; color: var(--text-muted);">
+                  {{ veh.entry_time }}
+                </td>
+                <td>
+                  <span class="badge badge-purple" data-entry-time="{{ veh.entry_time }}">Calculating...</span>
+                </td>
+                <td>
+                  <code style="font-size: 0.75rem; background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; color: var(--primary);">
+                    dict[key] &rarr; O(1)
+                  </code>
+                </td>
+                <td>
+                  <button class="btn btn-danger btn-sm" onclick="openExitModal('{{ veh.vehicle_number }}', '{{ veh.slot_number }}', '{{ veh.category }}', '{{ veh.entry_time }}')">
+                    <span>Exit & Bill</span>
+                  </button>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="8" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">🅿️</div>
+                <h4 style="font-weight: 700; color: var(--text-main);">No active parked vehicles found</h4>
+                <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+                  {% if search_query %}
+                    No parked vehicle matched "{{ search_query }}". Try clearing your search.
+                  {% else %}
+                    All parking slots are currently vacant. Use "Park New Vehicle" to allocate a slot.
+                  {% endif %}
+                </p>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

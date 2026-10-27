@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title }} — SmartPark DSA System</title>
+  
+  <!-- CSS Styles -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  
+  <!-- Chart.js CDN with graceful fallback -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-icon">P</div>
+        <div class="brand-info">
+          <h1>SmartPark</h1>
+          <p>DSA Allocation System</p>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <span class="nav-category">Main Navigation</span>
+        
+        <a href="{{ url_for('dashboard') }}" class="nav-item {{ 'active' if request.endpoint == 'dashboard' else '' }}">
+          <div class="nav-link-content">
+            <span style="font-size: 1.1rem;">📊</span>
+            <span>Dashboard</span>
+          </div>
+        </a>
+
+        <a href="{{ url_for('parking_map') }}" class="nav-item {{ 'active' if request.endpoint == 'parking_map' else '' }}">
+          <div class="nav-link-content">
+            <span style="font-size: 1.1rem;">🅿️</span>
+            <span>Parking Map</span>
+          </div>
+          <span class="nav-badge badge-primary">{{ global_summary.total_slots }}</span>
+        </a>
+
+        <a href="{{ url_for('vehicles') }}" class="nav-item {{ 'active' if request.endpoint == 'vehicles' else '' }}">
+          <div class="nav-link-content">
+            <span style="font-size: 1.1rem;">🚗</span>
+            <span>Active Vehicles</span>
+          </div>
+          <span class="nav-badge {{ 'badge-danger' if global_summary.occupied_slots > 0 else 'badge-primary' }}">
+            {{ global_summary.occupied_slots }}
+          </span>
+        </a>
+
+        <a href="{{ url_for('waiting_queue') }}" class="nav-item {{ 'active' if request.endpoint == 'waiting_queue' else '' }}">
+          <div class="nav-link-content">
+            <span style="font-size: 1.1rem;">⏳</span>
+            <span>FIFO Queue</span>
+          </div>
+          {% if global_summary.waiting_count > 0 %}
+            <span class="nav-badge badge-purple">{{ global_summary.waiting_count }}</span>
+          {% endif %}
+        </a>
+
+        <a href="{{ url_for('history') }}" class="nav-item {{ 'active' if request.endpoint == 'history' else '' }}">
+          <div class="nav-link-content">
+            <span style="font-size: 1.1rem;">📜</span>
+            <span>Parking History</span>
+          </div>
+        </a>
+
+        <span class="nav-category" style="margin-top: 0.5rem;">Academic / Faculty</span>
+
+        <a href="{{ url_for('dsa_insights') }}" class="nav-item {{ 'active' if request.endpoint == 'dsa_insights' else '' }}">
+          <div class="nav-link-content">
+            <span style="font-size: 1.1rem;">🧠</span>
+            <span>DSA Insights & Viva</span>
+          </div>
+          <span class="nav-badge badge-purple">Viva</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="dsa-badge-pill">
+          <div class="pulse-indicator"></div>
+          <div>
+            <strong>Linear Search:</strong> O(N)<br>
+            <strong>Hash Lookup:</strong> O(1)
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+      
+      <!-- TOPBAR -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="mobileToggle" class="mobile-menu-btn" title="Toggle Navigation">☰</button>
+          <h2 class="page-title">{{ page_title }}</h2>
+        </div>
+
+        <div class="topbar-right">
+          <div class="live-clock-pill">
+            <span>⏱️</span>
+            <span id="liveClock">{{ current_time_str }}</span>
+          </div>
+
+          <button class="btn btn-primary btn-sm" onclick="openParkModal()">
+            <span>➕ Park Vehicle</span>
+          </button>
+
+          <!-- Quick Faculty Demo Tools -->
+          <form action="{{ url_for('seed_sample_data') }}" method="POST" style="display: inline;">
+            <button type="submit" class="btn btn-secondary btn-sm" title="Seed realistic demo data for viva">
+              <span>⚡ Demo Data</span>
+            </button>
+          </form>
+
+          <form action="{{ url_for('reset_demo') }}" method="POST" style="display: inline;" onsubmit="return confirm('Reset all slots to default empty state?');">
+            <button type="submit" class="btn btn-secondary btn-sm" title="Reset parking system">
+              <span>🔄 Reset</span>
+            </button>
+          </form>
+        </div>
+      </header>
+
+      <!-- PAGE BODY -->
+      <div class="page-body">
+        
+        <!-- FLASH NOTIFICATIONS -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-container">
+              {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                  <span>{{ message }}</span>
+                  <button class="alert-close" type="button">&times;</button>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <!-- CHILD TEMPLATE CONTENT -->
+        {% block content %}{% endblock %}
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 1: PARK VEHICLE (MODAL)
+       ======================================================================== -->
+  <div id="parkVehicleModal" class="modal-backdrop">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">🚗 Vehicle Entry Form</h3>
+        <button type="button" class="alert-close" data-close-modal="parkVehicleModal">&times;</button>
+      </div>
+      <form action="{{ url_for('park_vehicle') }}" method="POST">
+        <div class="modal-body">
+          <input type="hidden" name="preferred_slot_id" id="preferredSlotId" value="">
+          
+          <div id="selectedSlotDisplay" class="alert alert-info" style="display: none; margin-bottom: 1rem; font-size: 0.8rem;"></div>
+
+          <div class="form-group">
+            <label class="form-label" for="vehicleNumber">Vehicle Number <span style="color: var(--danger);">*</span></label>
+            <input type="text" class="form-control" id="vehicleNumber" name="vehicle_number" placeholder="e.g. KA-01-AB-1234" required autofocus autocomplete="off">
+            <small style="font-size: 0.72rem; color: var(--text-muted);">Duplicate vehicles parked inside are automatically rejected via O(1) hashing.</small>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="vehicleCategory">Vehicle Category <span style="color: var(--danger);">*</span></label>
+            <select class="form-control" id="vehicleCategory" name="category" required>
+              <option value="Four-Wheeler" selected>Four-Wheeler (Car / Sedan / SUV)</option>
+              <option value="Two-Wheeler">Two-Wheeler (Motorcycle / Scooter)</option>
+              <option value="EV Charging">EV (Electric Vehicle with Charging)</option>
+              <option value="Reserved">VIP / Accessible / Priority</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="driverContact">Driver Contact (Optional)</label>
+            <input type="text" class="form-control" id="driverContact" name="driver_contact" placeholder="e.g. 9876543210">
+          </div>
+
+          <div class="alert alert-warning" style="font-size: 0.78rem; padding: 0.6rem 0.8rem; margin-top: 0.5rem;">
+            <strong>DSA Allocation Logic:</strong> Scans slots using <em>Linear Search O(N)</em> for first eligible slot. If full, adds to <em>FIFO Queue O(1)</em>.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close-modal="parkVehicleModal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Allocate Slot</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 2: EXIT VEHICLE (MODAL)
+       ======================================================================== -->
+  <div id="exitVehicleModal" class="modal-backdrop">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">🏁 Process Vehicle Exit</h3>
+        <button type="button" class="alert-close" data-close-modal="exitVehicleModal">&times;</button>
+      </div>
+      <form action="{{ url_for('exit_vehicle') }}" method="POST">
+        <div class="modal-body">
+          <div class="alert alert-info" style="margin-bottom: 1rem;">
+            Vehicle to Exit: <strong id="exitVehDisplay">-</strong>
+          </div>
+
+          <input type="hidden" name="vehicle_number" id="exitVehicleNumber" value="">
+          
+          <div id="exitDetailsBox" style="margin-bottom: 1.25rem;"></div>
+
+          <div class="form-group">
+            <label class="form-label" for="simulatedMinutes">Simulate Parking Duration (Optional for Viva/Demo)</label>
+            <select class="form-control" name="simulated_minutes" id="simulatedMinutes">
+              <option value="">Calculate Real Elapsed Time</option>
+              <option value="30">30 Minutes (Short stay)</option>
+              <option value="60">1 Hour (Standard stay)</option>
+              <option value="120">2 Hours (Medium stay)</option>
+              <option value="240">4 Hours (Extended stay)</option>
+            </select>
+            <small style="font-size: 0.72rem; color: var(--text-muted);">
+              Use simulation to show faculty instant fee and duration calculation without waiting real hours!
+            </small>
+          </div>
+
+          <div class="alert alert-success" style="font-size: 0.78rem; padding: 0.6rem 0.8rem; margin-top: 0.5rem;">
+            <strong>FIFO Auto-Allocation:</strong> Upon exit, the newly freed slot is checked against waiting vehicles in <em>collections.deque</em>.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close-modal="exitVehicleModal">Cancel</button>
+          <button type="submit" class="btn btn-danger">Confirm Exit & Bill</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- KPI STAT CARDS -->
+<div class="stats-grid">
+  <!-- Card 1: Total Slots -->
+  <div class="stat-card primary">
+    <div class="stat-header">
+      <span class="stat-label">Total Slots</span>
+      <div class="stat-icon">🅿️</div>
+    </div>
+    <div class="stat-value">{{ summary.total_slots }}</div>
+    <div class="stat-subtext">Fixed capacity parking lot</div>
+  </div>
+
+  <!-- Card 2: Available Slots -->
+  <div class="stat-card success">
+    <div class="stat-header">
+      <span class="stat-label">Available Slots</span>
+      <div class="stat-icon">🟢</div>
+    </div>
+    <div class="stat-value">{{ summary.available_slots }}</div>
+    <div class="stat-subtext">Ready for instant allocation</div>
+  </div>
+
+  <!-- Card 3: Occupied Slots -->
+  <div class="stat-card danger">
+    <div class="stat-header">
+      <span class="stat-label">Occupied Slots</span>
+      <div class="stat-icon">🔴</div>
+    </div>
+    <div class="stat-value">{{ summary.occupied_slots }}</div>
+    <div class="stat-subtext">Currently parked vehicles</div>
+  </div>
+
+  <!-- Card 4: Reserved Slots -->
+  <div class="stat-card warning">
+    <div class="stat-header">
+      <span class="stat-label">Reserved Slots</span>
+      <div class="stat-icon">🟡</div>
+    </div>
+    <div class="stat-value">{{ summary.reserved_slots }}</div>
+    <div class="stat-subtext">VIP / Accessible / Maintenance</div>
+  </div>
+
+  <!-- Card 5: FIFO Waiting Queue -->
+  <div class="stat-card purple">
+    <div class="stat-header">
+      <span class="stat-label">Waiting in Queue</span>
+      <div class="stat-icon">⏳</div>
+    </div>
+    <div class="stat-value">{{ summary.waiting_count }}</div>
+    <div class="stat-subtext">FIFO Deque (collections.deque)</div>
+  </div>
+
+  <!-- Card 6: Occupancy Percentage -->
+  <div class="stat-card primary">
+    <div class="stat-header">
+      <span class="stat-label">Occupancy Rate</span>
+      <div class="stat-icon">📈</div>
+    </div>
+    <div class="stat-value">{{ summary.occupancy_pct }}%</div>
+    <div class="progress-bar-container">
+      <div class="progress-bar-fill" style="width: {{ summary.occupancy_pct }}%; background: {% if summary.occupancy_pct > 80 %}var(--danger){% elif summary.occupancy_pct > 50 %}var(--warning){% else %}var(--primary){% endif %};"></div>
+    </div>
+  </div>
+</div>
+
+<!-- DSA LIVE TELEMETRY BANNER -->
+<div class="dsa-telemetry-banner">
+  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+    <div>
+      <h3 style="font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+        <span>⚡ Live DSA Performance Telemetry</span>
+        <span class="badge badge-success" style="font-size: 0.7rem;">Active</span>
+      </h3>
+      <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.2rem;">
+        Direct telemetry from in-memory Data Structures in <code>parking_manager.py</code>
+      </p>
+    </div>
+    <a href="{{ url_for('dsa_insights') }}" class="btn btn-secondary btn-sm" style="font-size: 0.78rem;">
+      <span>Explore DSA Details & Viva &rarr;</span>
+    </a>
+  </div>
+
+  <div class="dsa-telemetry-grid">
+    <!-- Telemetry 1: Hashing -->
+    <div class="dsa-telemetry-item">
+      <div class="dsa-item-label">1. Hashing (Hash Map)</div>
+      <div class="dsa-item-val">{{ summary.occupied_slots }} Keys Active</div>
+      <div class="dsa-item-complexity">Lookup & Duplicate Check: O(1)</div>
+    </div>
+
+    <!-- Telemetry 2: Linear Search -->
+    <div class="dsa-telemetry-item">
+      <div class="dsa-item-label">2. Slot Allocation Search</div>
+      <div class="dsa-item-val">
+        {% if search_metrics.found_slot %}
+          {{ search_metrics.probes_count }} Probes &rarr; {{ search_metrics.found_slot }}
+        {% else %}
+          Linear Search
+        {% endif %}
+      </div>
+      <div class="dsa-item-complexity">Slot Scan: O(N) Worst, O(1) Best</div>
+    </div>
+
+    <!-- Telemetry 3: Queue -->
+    <div class="dsa-telemetry-item">
+      <div class="dsa-item-label">3. FIFO Waiting Queue</div>
+      <div class="dsa-item-val">{{ summary.waiting_count }} Vehicles</div>
+      <div class="dsa-item-complexity">collections.deque: O(1) Pop/Push</div>
+    </div>
+
+    <!-- Telemetry 4: Sorting -->
+    <div class="dsa-telemetry-item">
+      <div class="dsa-item-label">4. History Sorting</div>
+      <div class="dsa-item-val">{{ sort_metrics.algorithm }}</div>
+      <div class="dsa-item-complexity">{{ sort_metrics.comparisons }} Comparisons (O(N log N))</div>
+    </div>
+  </div>
+</div>
+
+<!-- LIVE CHARTS ROW -->
+<div class="charts-row">
+  <!-- Chart 1: Real-time Occupancy Breakdown -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title">Real-Time Parking Capacity Breakdown</h3>
+        <p class="card-subtitle">Distribution of Available, Occupied, and Reserved slots</p>
+      </div>
+      <span class="badge badge-primary">30 Total</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrapper">
+        <canvas id="occupancyChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart 2: Category Distribution -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title">Slot Allocation by Vehicle Category</h3>
+        <p class="card-subtitle">Occupied vs Available per vehicle category</p>
+      </div>
+      <span class="badge badge-info">Multi-Category</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrapper">
+        <canvas id="categoryChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- QUICK ACTION & RECENT SESSIONS GRID -->
+<div style="display: grid; grid-template-columns: 340px 1fr; gap: 1.5rem; margin-bottom: 1.75rem;">
+  
+  <!-- QUICK PARK CARD -->
+  <div class="card" style="height: fit-content;">
+    <div class="card-header">
+      <h3 class="card-title">⚡ Quick Vehicle Entry</h3>
+    </div>
+    <div class="card-body">
+      <form action="{{ url_for('park_vehicle') }}" method="POST">
+        <div class="form-group">
+          <label class="form-label" for="quickVehNum">Vehicle Registration Number</label>
+          <input type="text" class="form-control" id="quickVehNum" name="vehicle_number" placeholder="e.g. KA-05-MK-9988" required autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="quickCategory">Vehicle Category</label>
+          <select class="form-control" id="quickCategory" name="category" required>
+            <option value="Four-Wheeler" selected>Four-Wheeler (Car / SUV)</option>
+            <option value="Two-Wheeler">Two-Wheeler (Bike / Scooter)</option>
+            <option value="EV Charging">EV (Electric Vehicle Charging)</option>
+            <option value="Reserved">VIP / Accessible</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="quickContact">Driver Contact (Optional)</label>
+          <input type="text" class="form-control" id="quickContact" name="driver_contact" placeholder="e.g. 9811223344">
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%;">
+          <span>Allocate First Available Slot</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ACTIVE VEHICLES PREVIEW TABLE -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title">🚗 Currently Parked Vehicles</h3>
+        <p class="card-subtitle">Active vehicles stored in O(1) Python dictionary</p>
+      </div>
+      <a href="{{ url_for('vehicles') }}" class="btn btn-secondary btn-sm">View All ({{ global_summary.occupied_slots }}) &rarr;</a>
+    </div>
+    <div class="card-body" style="padding: 0;">
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Slot</th>
+              <th>Vehicle Number</th>
+              <th>Category</th>
+              <th>Entry Time</th>
+              <th>Duration</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if active_list %}
+              {% for veh in active_list %}
+                <tr>
+                  <td>
+                    <span class="badge badge-primary" style="font-weight: 700;">{{ veh.slot_number }}</span>
+                  </td>
+                  <td><strong>{{ veh.vehicle_number }}</strong></td>
+                  <td>
+                    <span class="badge badge-info">{{ veh.category }}</span>
+                  </td>
+                  <td style="font-size: 0.8rem; color: var(--text-muted);">{{ veh.entry_time }}</td>
+                  <td>
+                    <span class="badge badge-purple" data-entry-time="{{ veh.entry_time }}">Calculating...</span>
+                  </td>
+                  <td>
+                    <button class="btn btn-danger btn-sm" onclick="openExitModal('{{ veh.vehicle_number }}', '{{ veh.slot_number }}', '{{ veh.category }}', '{{ veh.entry_time }}')">
+                      <span>Exit & Bill</span>
+                    </button>
+                  </td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="6" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                  <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">🅿️</div>
+                  <strong>No vehicles currently parked.</strong>
+                  <p style="font-size: 0.8rem; margin-top: 0.25rem;">Use the Quick Vehicle Entry form to allocate a parking slot!</p>
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- RECENT HISTORY & QUEUE SECTION -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+  
+  <!-- RECENT PARKING SESSIONS -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title">📜 Recent Parking Sessions</h3>
+        <p class="card-subtitle">Sorted via Merge Sort (O(N log N))</p>
+      </div>
+      <a href="{{ url_for('history') }}" class="btn btn-secondary btn-sm">All History &rarr;</a>
+    </div>
+    <div class="card-body" style="padding: 0;">
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Vehicle</th>
+              <th>Slot</th>
+              <th>Duration</th>
+              <th>Fee Paid</th>
+              <th>Exit Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if recent_history %}
+              {% for rec in recent_history %}
+                <tr>
+                  <td><strong>{{ rec.vehicle_number }}</strong></td>
+                  <td><span class="badge badge-primary">{{ rec.slot_number }}</span></td>
+                  <td>{{ rec.duration_minutes }} mins</td>
+                  <td><strong style="color: var(--success-text);">Rs. {{ "%.2f"|format(rec.fee) }}</strong></td>
+                  <td style="font-size: 0.78rem; color: var(--text-muted);">{{ rec.exit_time }}</td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                  No completed parking sessions yet.
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- WAITING QUEUE PREVIEW -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3 class="card-title">⏳ FIFO Waiting Queue</h3>
+        <p class="card-subtitle">collections.deque structure (Head to Tail)</p>
+      </div>
+      <a href="{{ url_for('waiting_queue') }}" class="btn btn-secondary btn-sm">Queue Details &rarr;</a>
+    </div>
+    <div class="card-body" style="padding: 0;">
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Queue Pos</th>
+              <th>Vehicle Number</th>
+              <th>Category</th>
+              <th>Queued Since</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if waiting_list %}
+              {% for q in waiting_list %}
+                <tr>
+                  <td>
+                    <span class="badge {{ 'badge-primary' if loop.first else 'badge-purple' }}">
+                      {{ '#1 FRONT' if loop.first else '#' ~ q.queue_position }}
+                    </span>
+                  </td>
+                  <td><strong>{{ q.vehicle_number }}</strong></td>
+                  <td><span class="badge badge-info">{{ q.category }}</span></td>
+                  <td style="font-size: 0.78rem; color: var(--text-muted);">{{ q.created_at }}</td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="4" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+                  <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">✨</div>
+                  Waiting queue is empty. Eligible slots are currently available!
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

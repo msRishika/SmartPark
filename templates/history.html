@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">📜 Parking Session History</h3>
+      <p class="card-subtitle">
+        Completed parking sessions recorded in SQLite, searchable via <strong>Linear Search</strong>, and sorted with custom <strong>Merge Sort / Quick Sort</strong> (O(N log N)).
+      </p>
+    </div>
+
+    <span class="badge badge-primary" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">
+      {{ records|length }} Session(s)
+    </span>
+  </div>
+
+  <div class="card-body">
+
+    <!-- SEARCH & SORT CONTROLS FORM -->
+    <form action="{{ url_for('history') }}" method="GET" style="background: #f8fafc; border: 1px solid var(--border-medium); border-radius: var(--radius-md); padding: 1.15rem; margin-bottom: 1.5rem;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) 110px; gap: 1rem; align-items: flex-end;">
+        
+        <!-- Search Query -->
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" for="historySearch">Search Vehicle or Slot</label>
+          <input type="text" class="form-control" id="historySearch" name="q" value="{{ search_query }}" placeholder="e.g. KA-01 or S-07" autocomplete="off">
+        </div>
+
+        <!-- Sort By Key -->
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" for="sortBy">Sort By Attribute</label>
+          <select class="form-control" id="sortBy" name="sort_by">
+            <option value="exit_time" {{ 'selected' if sort_by == 'exit_time' else '' }}>Exit Time (Default)</option>
+            <option value="entry_time" {{ 'selected' if sort_by == 'entry_time' else '' }}>Entry Time</option>
+            <option value="vehicle_number" {{ 'selected' if sort_by == 'vehicle_number' else '' }}>Vehicle Number (A-Z)</option>
+            <option value="duration_minutes" {{ 'selected' if sort_by == 'duration_minutes' else '' }}>Duration (Minutes)</option>
+            <option value="fee" {{ 'selected' if sort_by == 'fee' else '' }}>Parking Fee (Rs.)</option>
+          </select>
+        </div>
+
+        <!-- Sort Order -->
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" for="sortOrder">Sort Order</label>
+          <select class="form-control" id="sortOrder" name="order">
+            <option value="desc" {{ 'selected' if order == 'desc' else '' }}>Descending (High &rarr; Low / Newest)</option>
+            <option value="asc" {{ 'selected' if order == 'asc' else '' }}>Ascending (Low &rarr; High / Oldest)</option>
+          </select>
+        </div>
+
+        <!-- Algorithm Selection -->
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" for="algoSelect">DSA Algorithm</label>
+          <select class="form-control" id="algoSelect" name="algo">
+            <option value="mergesort" {{ 'selected' if algo == 'mergesort' else '' }}>Merge Sort (O(N log N))</option>
+            <option value="quicksort" {{ 'selected' if algo == 'quicksort' else '' }}>Quick Sort (O(N log N))</option>
+          </select>
+        </div>
+
+        <!-- Apply Button -->
+        <div>
+          <button type="submit" class="btn btn-primary" style="width: 100%;">
+            <span>Apply</span>
+          </button>
+        </div>
+
+      </div>
+
+      {% if search_query or sort_by != 'exit_time' or order != 'desc' or algo != 'mergesort' %}
+        <div style="margin-top: 0.75rem; display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.78rem; color: var(--text-muted);">Custom filters or sorting active</span>
+          <a href="{{ url_for('history') }}" style="font-size: 0.78rem; color: var(--primary); font-weight: 600; text-decoration: none;">&times; Reset Filters</a>
+        </div>
+      {% endif %}
+    </form>
+
+    <!-- SORT ALGORITHM TELEMETRY BANNER -->
+    <div style="background: white; border: 1px solid var(--border-medium); border-left: 4px solid var(--purple); border-radius: var(--radius-md); padding: 0.85rem 1.25rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <span style="font-size: 1.35rem;">⚡</span>
+        <div>
+          <div style="font-size: 0.88rem; font-weight: 700; color: var(--text-main);">
+            Sorted via <code>{{ sort_metrics.algorithm }}</code>
+          </div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);">
+            Complexity: <strong style="color: var(--primary);">{{ sort_metrics.time_complexity }}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 1rem; align-items: center;">
+        <div style="text-align: right;">
+          <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Comparisons Executed</div>
+          <div style="font-size: 1.1rem; font-weight: 800; color: var(--purple-text);">{{ sort_metrics.comparisons }}</div>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Records Processed</div>
+          <div style="font-size: 1.1rem; font-weight: 800; color: var(--text-main);">{{ sort_metrics.items_sorted }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY TABLE -->
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Vehicle Number</th>
+            <th>Category</th>
+            <th>Slot Assigned</th>
+            <th>Entry Time</th>
+            <th>Exit Time</th>
+            <th>Duration</th>
+            <th>Fee Paid</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if records %}
+            {% for rec in records %}
+              <tr>
+                <td style="color: var(--text-muted); font-size: 0.8rem;">{{ rec.id }}</td>
+                <td>
+                  <strong style="font-size: 0.92rem; letter-spacing: 0.02em;">{{ rec.vehicle_number }}</strong>
+                </td>
+                <td>
+                  <span class="badge badge-info">{{ rec.category }}</span>
+                </td>
+                <td>
+                  <span class="badge badge-primary" style="font-weight: 700;">{{ rec.slot_number }}</span>
+                </td>
+                <td style="font-size: 0.82rem; color: var(--text-muted);">{{ rec.entry_time }}</td>
+                <td style="font-size: 0.82rem; color: var(--text-muted);">{{ rec.exit_time }}</td>
+                <td>
+                  <strong>{{ rec.duration_minutes }}</strong> mins
+                  {% if rec.duration_minutes >= 60 %}
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">({{ (rec.duration_minutes // 60) }}h {{ rec.duration_minutes % 60 }}m)</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <strong style="color: var(--success-text); font-size: 0.95rem;">Rs. {{ "%.2f"|format(rec.fee) }}</strong>
+                </td>
+                <td>
+                  <span class="badge badge-success">Completed</span>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="9" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                <div style="font-size: 2rem; margin-bottom: 0.5rem;">📜</div>
+                <h4 style="font-weight: 700; color: var(--text-main);">No parking history records found</h4>
+                <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+                  {% if search_query %}
+                    No sessions matched your search query "{{ search_query }}". Try clearing the search.
+                  {% else %}
+                    Completed sessions will appear here after parked vehicles exit the parking lot.
+                  {% endif %}
+                </p>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
