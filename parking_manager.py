@@ -274,7 +274,7 @@ class ParkingManager:
                     "slot_number": target_slot.slot_number,
                     "slot_id": target_slot.id,
                     "category": category,
-                    "message": f"Success! Slot {target_slot.slot_number} ({target_slot.category}) allocated to vehicle {normalized_num} via Linear Search."
+                    "message": f"Slot {target_slot.slot_number} ({target_slot.category}) successfully allocated to vehicle {normalized_num}."
                 }
             except Exception as e:
                 conn.rollback()
@@ -308,7 +308,7 @@ class ParkingManager:
                 "success": True,
                 "status": "queued",
                 "queue_position": queue_pos,
-                "message": f"All eligible slots are full. Vehicle {normalized_num} added to FIFO Waiting Queue at Position #{queue_pos}."
+                "message": f"All eligible slots are full. Vehicle {normalized_num} added to Waiting List at Position #{queue_pos}."
             }
         except Exception as e:
             conn.rollback()
@@ -319,11 +319,11 @@ class ParkingManager:
     # =========================================================================
     # VEHICLE EXIT & AUTO FIFO QUEUE DISPATCH
     # =========================================================================
-    def exit_vehicle(self, vehicle_number: str, simulated_minutes: int = None):
+    def exit_vehicle(self, vehicle_number: str, simulated_minutes = None):
         """
         Releases a vehicle from parking:
         1. HASH MAP LOOKUP: O(1) check active_vehicles
-        2. Calculate duration and billing fee
+        2. Calculate duration and billing fee using established rates
         3. Archive session to parking_history table
         4. Free the slot (mark available, remove vehicle)
         5. Remove from active_vehicles hash map: O(1)
@@ -344,28 +344,51 @@ class ParkingManager:
         slot_id = session["slot_id"]
         slot_number = session["slot_number"]
         category = session["category"]
-        entry_time_str = session["entry_time"]
+        entry_time_str = session.get("entry_time")
 
-        # Parse Entry Time
-        try:
-            entry_dt = datetime.strptime(entry_time_str, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            entry_dt = datetime.now()
+        # Parse Entry Time defensively
+        entry_dt = datetime.now()
+        if entry_time_str:
+            try:
+                entry_dt = datetime.strptime(str(entry_time_str).strip(), "%Y-%m-%d %H:%M:%S")
+            except (ValueError, TypeError):
+                entry_dt = datetime.now()
+        else:
+            entry_time_str = entry_dt.strftime("%Y-%m-%d %H:%M:%S")
 
         exit_dt = datetime.now()
         exit_time_str = exit_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        # Duration Calculation
-        if simulated_minutes is not None and simulated_minutes > 0:
-            duration_minutes = simulated_minutes
-        else:
-            diff_seconds = (exit_dt - entry_dt).total_seconds()
+        # Duration Calculation defensively (handles None, empty string, int, or string numbers)
+        duration_minutes = None
+        if simulated_minutes is not None and str(simulated_minutes).strip() != "":
+            try:
+                parsed_sim = int(simulated_minutes)
+                if parsed_sim > 0:
+                    duration_minutes = parsed_sim
+            except (ValueError, TypeError):
+                duration_minutes = None
+
+        if duration_minutes is None:
+            diff_seconds = max(0, (exit_dt - entry_dt).total_seconds())
             duration_minutes = max(1, math.ceil(diff_seconds / 60))
 
         # Fee Calculation
         rates = CATEGORY_RATES.get(category, {"base_fee": 20.0, "hourly_rate": 30.0})
-        hours_billed = math.ceil(duration_minutes / 60)
-        total_fee = rates["base_fee"] + (rates["hourly_rate"] * hours_billed)
+        base_fee = float(rates.get("base_fee", 20.0))
+        hourly_rate = float(rates.get("hourly_rate", 30.0))
+        hours_billed = int(math.ceil(duration_minutes / 60))
+        total_fee = round(base_fee + (hourly_rate * hours_billed), 2)
+
+        # Formatted duration string
+        hrs_part = duration_minutes // 60
+        mins_part = duration_minutes % 60
+        if hrs_part > 0 and mins_part > 0:
+            duration_formatted = f"{hrs_part}h {mins_part}m"
+        elif hrs_part > 0:
+            duration_formatted = f"{hrs_part} hr{'s' if hrs_part > 1 else ''}"
+        else:
+            duration_formatted = f"{duration_minutes} min{'s' if duration_minutes > 1 else ''}"
 
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -400,7 +423,8 @@ class ParkingManager:
                     break
 
             # Remove from Hash Map: O(1)
-            del self.active_vehicles[normalized_num]
+            if normalized_num in self.active_vehicles:
+                del self.active_vehicles[normalized_num]
 
             exit_summary = {
                 "vehicle_number": normalized_num,
@@ -408,7 +432,11 @@ class ParkingManager:
                 "category": category,
                 "entry_time": entry_time_str,
                 "exit_time": exit_time_str,
-                "duration_minutes": duration_minutes,
+                "duration_minutes": int(duration_minutes),
+                "duration_formatted": duration_formatted,
+                "base_fee": base_fee,
+                "hourly_rate": hourly_rate,
+                "hours_billed": hours_billed,
                 "fee": total_fee
             }
 
@@ -417,7 +445,7 @@ class ParkingManager:
 
             return {
                 "success": True,
-                "message": f"Vehicle {normalized_num} exited successfully from Slot {slot_number}. Duration: {duration_minutes} mins | Fee: Rs. {total_fee:.2f}",
+                "message": f"Vehicle {normalized_num} exited Slot {slot_number}. Total Duration: {duration_formatted} | Fee: Rs. {total_fee:.2f}",
                 "summary": exit_summary,
                 "queue_allocation": queue_allocation
             }
@@ -501,7 +529,7 @@ class ParkingManager:
             "vehicle_number": veh_num,
             "category": veh_cat,
             "slot_number": slot.slot_number,
-            "message": f"Waiting vehicle {veh_num} was automatically dispatched from FIFO Queue and allocated Slot {slot.slot_number}!"
+            "message": f"Waiting vehicle {veh_num} was automatically allocated newly available Slot {slot.slot_number}."
         }
 
     # =========================================================================

@@ -1,25 +1,56 @@
 """
 app.py
-Flask Application for SmartPark - Smart Parking Slot Allocation System.
-Connects the web frontend with the SQLite database and ParkingManager DSA engine.
+Flask Application for SmartPark - Professional Parking Management System.
+Connects the web frontend with the SQLite database and ParkingManager engine.
 """
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 import os
+import math
 from datetime import datetime, timedelta
-import random
 
 from database import init_db, DEFAULT_DB_PATH
-from parking_manager import ParkingManager
+from parking_manager import ParkingManager, CATEGORY_RATES
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "smartpark-secret-key-college-dsa-2026")
+app.secret_key = os.environ.get("SECRET_KEY", "smartpark-professional-secret-key-2026")
 
 # Initialize SQLite database if it doesn't exist
 init_db(DEFAULT_DB_PATH)
 
-# Initialize the ParkingManager DSA engine
+# Initialize the ParkingManager engine
 pm = ParkingManager(DEFAULT_DB_PATH)
+
+
+# =============================================================================
+# TEMPLATE FILTERS & CONTEXT INJECTION
+# =============================================================================
+
+@app.template_filter("currency")
+def currency_filter(value):
+    """Safely format values into Indian Rupee string without throwing TypeErrors."""
+    try:
+        val = float(value)
+        return f"Rs. {val:,.2f}"
+    except (ValueError, TypeError):
+        return f"Rs. {value}"
+
+
+@app.template_filter("duration_fmt")
+def duration_filter(minutes):
+    """Safely format minutes into readable hours and minutes."""
+    try:
+        mins = int(minutes)
+        hrs = mins // 60
+        rem = mins % 60
+        if hrs > 0 and rem > 0:
+            return f"{hrs}h {rem}m"
+        elif hrs > 0:
+            return f"{hrs} hr{'s' if hrs > 1 else ''}"
+        else:
+            return f"{mins} min{'s' if mins != 1 else ''}"
+    except (ValueError, TypeError):
+        return f"{minutes} mins"
 
 
 @app.context_processor
@@ -29,7 +60,7 @@ def inject_global_data():
     return {
         "global_summary": summary,
         "current_year": datetime.now().year,
-        "current_time_str": datetime.now().strftime("%A, %d %b %Y | %I:%M:%S %p")
+        "current_time_str": datetime.now().strftime("%A, %d %b %Y | %I:%M %p")
     }
 
 
@@ -40,20 +71,17 @@ def inject_global_data():
 @app.route("/")
 @app.route("/dashboard")
 def dashboard():
-    """Main dashboard with KPI stat cards, live charts, recent activity, and quick park."""
+    """
+    Main dashboard with KPI summary cards, occupancy statistics,
+    and a focused real-time overview.
+    Does not duplicate full waiting list or complete history tables here.
+    """
+    session.pop("active_receipt", None)
+    session.pop("active_receipt_queue", None)
     summary = pm.get_dashboard_summary()
-    recent_history = pm.get_parking_history(sort_by="exit_time", order="desc", algorithm="mergesort")[:6]
-    active_list = list(pm.active_vehicles.values())[:6]
-    waiting_list = list(pm.waiting_queue)[:5]
-
     return render_template(
         "dashboard.html",
         summary=summary,
-        recent_history=recent_history,
-        active_list=active_list,
-        waiting_list=waiting_list,
-        search_metrics=pm.last_search_metrics,
-        sort_metrics=pm.last_sort_metrics,
         page_title="Dashboard"
     )
 
@@ -61,6 +89,8 @@ def dashboard():
 @app.route("/map")
 def parking_map():
     """Visual parking map displaying all 30 slots with real-time status and category filtering."""
+    session.pop("active_receipt", None)
+    session.pop("active_receipt_queue", None)
     category_filter = request.args.get("category", "All")
     status_filter = request.args.get("status", "All")
 
@@ -79,18 +109,17 @@ def parking_map():
         category_filter=category_filter,
         status_filter=status_filter,
         active_vehicles=pm.active_vehicles,
-        page_title="Parking Lot Map"
+        page_title="Parking Map"
     )
 
 
 @app.route("/vehicles")
 def vehicles():
-    """Active vehicles directory with O(1) hash search and direct exit actions."""
+    """Active vehicles directory with search and direct exit & billing actions."""
     query = request.args.get("q", "").strip().upper()
     active_list = list(pm.active_vehicles.values())
 
     if query:
-        # Fast lookup via O(1) hash map if exact match, or substring search
         if query in pm.active_vehicles:
             active_list = [pm.active_vehicles[query]]
         else:
@@ -99,44 +128,55 @@ def vehicles():
                 if query in v["vehicle_number"] or query in v["slot_number"] or query in v["category"].upper()
             ]
 
+    receipt = session.get("active_receipt")
+    receipt_queue = session.get("active_receipt_queue")
+
     return render_template(
         "vehicles.html",
         active_vehicles=active_list,
         total_active=len(pm.active_vehicles),
         search_query=query,
+        rates=CATEGORY_RATES,
+        receipt=receipt,
+        receipt_queue=receipt_queue,
         page_title="Active Vehicles"
     )
 
 
+@app.route("/waiting-list")
 @app.route("/queue")
-def waiting_queue():
-    """FIFO Waiting Queue view showcasing collections.deque structure."""
+def waiting_list():
+    """Waiting list view displaying queued vehicles waiting for an available slot."""
+    session.pop("active_receipt", None)
+    session.pop("active_receipt_queue", None)
     queue_items = list(pm.waiting_queue)
     return render_template(
-        "waiting_queue.html",
+        "waiting_list.html",
         queue_items=queue_items,
         queue_count=len(queue_items),
-        page_title="FIFO Waiting Queue"
+        page_title="Waiting List"
     )
+
+
+# Alias for backward compatibility
+waiting_queue = waiting_list
 
 
 @app.route("/history")
 def history():
-    """
-    Completed parking history with custom DSA sorting (Merge Sort / Quick Sort)
-    and linear search filtering.
-    """
+    """Completed parking history with duration, charges, and search/sorting options."""
+    session.pop("active_receipt", None)
+    session.pop("active_receipt_queue", None)
     search_query = request.args.get("q", "").strip()
     sort_by = request.args.get("sort_by", "exit_time")
     order = request.args.get("order", "desc")
-    algo = request.args.get("algo", "mergesort")
 
-    # Fetch and sort history using custom DSA algorithm
+    # Uses the internal DSA sorting engine transparently
     records = pm.get_parking_history(
         search_query=search_query,
         sort_by=sort_by,
         order=order,
-        algorithm=algo
+        algorithm="mergesort"
     )
 
     return render_template(
@@ -145,37 +185,17 @@ def history():
         search_query=search_query,
         sort_by=sort_by,
         order=order,
-        algo=algo,
-        sort_metrics=pm.last_sort_metrics,
         page_title="Parking History"
     )
 
 
-@app.route("/dsa-insights")
-def dsa_insights():
-    """
-    Dedicated DSA explanation and faculty viva showcase page.
-    Explains Big-O notations, data structures, and algorithms used in the project.
-    """
-    summary = pm.get_dashboard_summary()
-    return render_template(
-        "dsa_insights.html",
-        summary=summary,
-        search_metrics=pm.last_search_metrics,
-        sort_metrics=pm.last_sort_metrics,
-        active_count=len(pm.active_vehicles),
-        queue_count=len(pm.waiting_queue),
-        page_title="DSA Architecture & Insights"
-    )
-
-
 # =============================================================================
-# ACTION CONTROLLERS (PARK, EXIT, QUEUE, RESERVATIONS)
+# ACTION CONTROLLERS (PARK, EXIT & BILLING, QUEUE, RESERVATIONS)
 # =============================================================================
 
 @app.route("/park", methods=["POST"])
 def park_vehicle():
-    """Handles vehicle entry submission."""
+    """Handles vehicle entry submission and automatic slot assignment."""
     vehicle_number = request.form.get("vehicle_number", "").strip().upper()
     category = request.form.get("category", "Four-Wheeler").strip()
     driver_contact = request.form.get("driver_contact", "").strip()
@@ -184,11 +204,11 @@ def park_vehicle():
     if preferred_slot_id:
         try:
             preferred_slot_id = int(preferred_slot_id)
-        except ValueError:
+        except (ValueError, TypeError):
             preferred_slot_id = None
 
     if not vehicle_number:
-        flash("Please enter a valid vehicle number.", "danger")
+        flash("Please enter a valid vehicle registration number.", "danger")
         return redirect(request.referrer or url_for("dashboard"))
 
     result = pm.park_vehicle(
@@ -200,9 +220,9 @@ def park_vehicle():
 
     if result["success"]:
         if result.get("status") == "allocated":
-            flash(f"Slot {result['slot_number']} ({result['category']}) allocated to vehicle {vehicle_number} via Linear Search!", "success")
+            flash(f"Slot {result['slot_number']} ({result['category']}) has been assigned to vehicle {vehicle_number}.", "success")
         elif result.get("status") == "queued":
-            flash(f"All eligible slots are full! Vehicle {vehicle_number} added to FIFO Waiting Queue at Position #{result['queue_position']}.", "warning")
+            flash(f"All slots for {category} are full. Vehicle {vehicle_number} has been added to the Waiting List at Position #{result['queue_position']}.", "warning")
     else:
         flash(result["message"], "danger")
 
@@ -211,47 +231,67 @@ def park_vehicle():
 
 @app.route("/exit", methods=["POST"])
 def exit_vehicle():
-    """Handles vehicle exit, fee calculation, and FIFO queue automatic allocation."""
+    """
+    Handles vehicle release, calculates parking fees accurately,
+    saves the bill to session for display, and allocates freed slots to waiting vehicles.
+    """
     vehicle_number = request.form.get("vehicle_number", "").strip().upper()
-    simulated_minutes = request.form.get("simulated_minutes")
+    simulated_minutes_raw = request.form.get("simulated_minutes")
 
-    if simulated_minutes:
+    # Safe parsing of optional simulated duration: avoids TypeError on empty string or invalid inputs
+    simulated_minutes = None
+    if simulated_minutes_raw is not None and str(simulated_minutes_raw).strip() != "":
         try:
-            simulated_minutes = int(simulated_minutes)
-        except ValueError:
+            val = int(simulated_minutes_raw)
+            if val > 0:
+                simulated_minutes = val
+        except (ValueError, TypeError):
             simulated_minutes = None
 
     if not vehicle_number:
-        flash("Please provide a valid vehicle number to exit.", "danger")
-        return redirect(request.referrer or url_for("dashboard"))
+        flash("Please specify a valid vehicle number to process exit.", "danger")
+        return redirect(request.referrer or url_for("vehicles"))
 
     result = pm.exit_vehicle(vehicle_number=vehicle_number, simulated_minutes=simulated_minutes)
 
     if result["success"]:
         summary = result["summary"]
-        msg = f"Vehicle {vehicle_number} exited Slot {summary['slot_number']}. Duration: {summary['duration_minutes']} mins | Total Fee: Rs. {summary['fee']:.2f}"
+        session["active_receipt"] = summary
+        session["active_receipt_queue"] = result.get("queue_allocation")
+
+        fee_val = float(summary.get("fee", 0.0))
+        msg = f"Vehicle {vehicle_number} successfully exited from Slot {summary['slot_number']}. Total Fee: Rs. {fee_val:.2f}"
         flash(msg, "success")
 
-        # Notify if a waiting vehicle was dispatched from the FIFO queue
+        # Notify if a waiting vehicle was automatically allocated the freed slot
         if result.get("queue_allocation"):
             q_alloc = result["queue_allocation"]
-            flash(f"FIFO Queue Dispatch: Waiting vehicle {q_alloc['vehicle_number']} was automatically allocated freed Slot {q_alloc['slot_number']}!", "info")
+            flash(f"Slot {q_alloc['slot_number']} was immediately assigned to waiting vehicle {q_alloc['vehicle_number']} from the Waiting List.", "info")
     else:
         flash(result["message"], "danger")
 
-    return redirect(request.referrer or url_for("dashboard"))
+    return redirect(url_for("vehicles"))
+
+
+@app.route("/clear-bill", methods=["POST", "GET"])
+def clear_bill():
+    """Clears the displayed billing receipt from session."""
+    session.pop("active_receipt", None)
+    session.pop("active_receipt_queue", None)
+    session.pop("last_bill", None)
+    return redirect(url_for("vehicles"))
 
 
 @app.route("/queue/remove", methods=["POST"])
 def remove_from_queue():
-    """Removes a vehicle from the waiting queue."""
+    """Removes a vehicle from the waiting list."""
     vehicle_number = request.form.get("vehicle_number", "").strip().upper()
     result = pm.remove_from_waiting_queue(vehicle_number)
     if result["success"]:
-        flash(result["message"], "success")
+        flash(f"Vehicle {vehicle_number} has been removed from the Waiting List.", "success")
     else:
         flash(result["message"], "danger")
-    return redirect(url_for("waiting_queue"))
+    return redirect(url_for("waiting_list"))
 
 
 @app.route("/slot/toggle-reserve/<int:slot_id>", methods=["POST"])
@@ -262,7 +302,7 @@ def toggle_reserve(slot_id):
         flash(result["message"], "success")
         if result.get("queue_allocation"):
             q_alloc = result["queue_allocation"]
-            flash(f"Waiting vehicle {q_alloc['vehicle_number']} was automatically allocated unreserved Slot {q_alloc['slot_number']}!", "info")
+            flash(f"Waiting vehicle {q_alloc['vehicle_number']} was assigned unreserved Slot {q_alloc['slot_number']}.", "info")
     else:
         flash(result["message"], "danger")
 
@@ -270,27 +310,63 @@ def toggle_reserve(slot_id):
 
 
 # =============================================================================
-# API ENDPOINTS (FOR REAL-TIME CHART.JS & FRONTEND DYNAMICS)
+# API ENDPOINTS (FOR CHARTS & DYNAMIC BILL PREVIEW)
 # =============================================================================
+
+@app.route("/api/preview-bill/<vehicle_number>")
+def api_preview_bill(vehicle_number):
+    """Calculates live bill preview for an active vehicle before confirming exit."""
+    veh_norm = vehicle_number.strip().upper()
+    if veh_norm not in pm.active_vehicles:
+        return jsonify({"success": False, "message": "Vehicle is not currently parked."}), 404
+
+    session_info = pm.active_vehicles[veh_norm]
+    entry_time_str = session_info.get("entry_time")
+    category = session_info.get("category", "Four-Wheeler")
+    slot_num = session_info.get("slot_number", "")
+
+    # Calculate real elapsed time
+    entry_dt = datetime.now()
+    if entry_time_str:
+        try:
+            entry_dt = datetime.strptime(str(entry_time_str).strip(), "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            entry_dt = datetime.now()
+
+    exit_dt = datetime.now()
+    diff_seconds = max(0, (exit_dt - entry_dt).total_seconds())
+    duration_minutes = max(1, math.ceil(diff_seconds / 60))
+
+    rates = CATEGORY_RATES.get(category, {"base_fee": 20.0, "hourly_rate": 30.0})
+    base_fee = float(rates.get("base_fee", 20.0))
+    hourly_rate = float(rates.get("hourly_rate", 30.0))
+    hours_billed = int(math.ceil(duration_minutes / 60))
+    total_fee = round(base_fee + (hourly_rate * hours_billed), 2)
+
+    return jsonify({
+        "success": True,
+        "vehicle_number": veh_norm,
+        "slot_number": slot_num,
+        "category": category,
+        "entry_time": entry_time_str,
+        "current_time": exit_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        "duration_minutes": duration_minutes,
+        "base_fee": base_fee,
+        "hourly_rate": hourly_rate,
+        "hours_billed": hours_billed,
+        "estimated_fee": total_fee
+    })
+
 
 @app.route("/api/stats")
 def api_stats():
     """Returns JSON statistics for dynamic Chart.js rendering."""
     summary = pm.get_dashboard_summary()
-    
-    # Recent history for activity trends
-    history_records = pm.get_parking_history()[:15]
-    durations = [r["duration_minutes"] for r in history_records]
-    fees = [r["fee"] for r in history_records]
-    vehicle_labels = [r["vehicle_number"] for r in history_records]
-
     return jsonify({
         "summary": summary,
-        "search_metrics": pm.last_search_metrics,
-        "sort_metrics": pm.last_sort_metrics,
         "chart_data": {
             "occupancy": {
-                "labels": ["Available Slots", "Occupied Slots", "Reserved Slots"],
+                "labels": ["Available", "Occupied", "Reserved"],
                 "data": [summary["available_slots"], summary["occupied_slots"], summary["reserved_slots"]]
             },
             "category": {
@@ -307,11 +383,6 @@ def api_stats():
                     summary["category_stats"]["EV Charging"]["available"],
                     summary["category_stats"]["Reserved"]["available"]
                 ]
-            },
-            "recent_sessions": {
-                "labels": vehicle_labels[:8],
-                "durations": durations[:8],
-                "fees": fees[:8]
             }
         }
     })
@@ -323,104 +394,15 @@ def api_slots():
     return jsonify([slot.to_dict() for slot in pm.slots])
 
 
-# =============================================================================
-# FACULTY DEMO & TESTING UTILITIES
-# =============================================================================
-
-@app.route("/demo/seed-sample-data", methods=["POST"])
-def seed_sample_data():
-    """
-    Populates sample data for viva / faculty demonstration:
-    - Parks several vehicles across different categories
-    - Fills one category to enqueue waiting vehicles
-    - Adds realistic historical sessions with durations & fees
-    """
-    # 1. Reset first to have a clean state
-    init_db(DEFAULT_DB_PATH, force_reset=True)
-    pm.reload_from_db()
-
-    # 2. Park sample vehicles
-    samples = [
-        ("KA-01-MJ-1001", "Two-Wheeler", "9876543210"),
-        ("KA-01-MJ-1002", "Two-Wheeler", "9876543211"),
-        ("MH-12-DE-2020", "Four-Wheeler", "9123456780"),
-        ("DL-04-CA-3344", "Four-Wheeler", "9123456781"),
-        ("TN-07-BB-4567", "Four-Wheeler", "9123456782"),
-        ("TS-09-EV-5500", "EV Charging", "9988776655"),
-        ("KA-05-EV-6611", "EV Charging", "9988776656"),
-        ("DL-01-VIP-001", "Reserved", "9000000001")
-    ]
-
-    for veh, cat, contact in samples:
-        pm.park_vehicle(veh, cat, contact)
-
-    # 3. Add some historical sessions
-    now = datetime.now()
-    history_samples = [
-        ("KA-03-HA-8899", "Four-Wheeler", "S-08", now - timedelta(hours=3), now - timedelta(hours=1), 120, 80.0),
-        ("MH-01-BT-7722", "Two-Wheeler", "S-03", now - timedelta(hours=2), now - timedelta(minutes=45), 75, 40.0),
-        ("DL-08-CC-1122", "Four-Wheeler", "S-09", now - timedelta(hours=4), now - timedelta(hours=2), 120, 80.0),
-        ("KA-04-EV-9900", "EV Charging", "S-23", now - timedelta(hours=5), now - timedelta(hours=1), 240, 185.0),
-        ("HR-26-ZZ-4455", "Four-Wheeler", "S-10", now - timedelta(hours=1), now - timedelta(minutes=15), 45, 50.0),
-    ]
-
-    conn = pm.get_connection()
-    cursor = conn.cursor()
-    for veh, cat, slot, ent, ext, dur, fee in history_samples:
-        cursor.execute("""
-            INSERT INTO parking_history (vehicle_number, category, slot_number, entry_time, exit_time, duration_minutes, fee)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (veh, cat, slot, ent.strftime("%Y-%m-%d %H:%M:%S"), ext.strftime("%Y-%m-%d %H:%M:%S"), dur, fee))
-    conn.commit()
-    conn.close()
-
-    # 4. Enqueue 2 waiting vehicles to show FIFO queue in action
-    pm.waiting_queue.append({
-        "vehicle_number": "KA-02-WQ-7777",
-        "category": "Two-Wheeler",
-        "driver_contact": "9811223344",
-        "queue_position": 1,
-        "created_at": (now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
-    })
-    pm.waiting_queue.append({
-        "vehicle_number": "MH-04-WQ-8888",
-        "category": "Four-Wheeler",
-        "driver_contact": "9855667788",
-        "queue_position": 2,
-        "created_at": (now - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
-    })
-
-    conn = pm.get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO waiting_queue (vehicle_number, category, driver_contact, queue_position, created_at)
-        VALUES (?, ?, ?, ?, ?)
-    """, ("KA-02-WQ-7777", "Two-Wheeler", "9811223344", 1, (now - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")))
-    cursor.execute("""
-        INSERT INTO waiting_queue (vehicle_number, category, driver_contact, queue_position, created_at)
-        VALUES (?, ?, ?, ?, ?)
-    """, ("MH-04-WQ-8888", "Four-Wheeler", "9855667788", 2, (now - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")))
-    conn.commit()
-    conn.close()
-
-    flash("Sample demonstration data loaded successfully! 8 vehicles parked, 2 in FIFO queue, 5 completed history records.", "success")
-    return redirect(url_for("dashboard"))
-
-
-@app.route("/demo/reset", methods=["POST"])
-def reset_demo():
-    """Resets database and in-memory structures to clean default state."""
-    init_db(DEFAULT_DB_PATH, force_reset=True)
-    pm.reload_from_db()
-    flash("System successfully reset to clean default state (30 slots: 28 available, 2 reserved).", "info")
+# Route kept for backward compatibility if directly visited
+@app.route("/dsa-insights")
+def dsa_insights():
     return redirect(url_for("dashboard"))
 
 
 if __name__ == "__main__":
-    # Start Flask application in debug mode for local development
     print("=" * 65)
-    print("  SmartPark - Smart Parking Slot Allocation System")
-    print("  DSA Powered: Hashing, Linear Search, Deque, Merge/Quick Sort")
-    print("  Access web UI at: http://127.0.0.1:5000")
+    print("  SmartPark — Professional Parking Management System")
+    print("  Web Server running at: http://127.0.0.1:5000")
     print("=" * 65)
     app.run(host="127.0.0.1", port=5000, debug=True)

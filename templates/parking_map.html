@@ -4,13 +4,13 @@
 <div class="card">
   <div class="card-header">
     <div>
-      <h3 class="card-title">🅿️ Real-Time 30-Slot Visual Parking Map</h3>
+      <h3 class="card-title">🅿️ Parking Lot Map</h3>
       <p class="card-subtitle">
-        Visual representation of all 30 parking bays. Color coded: Green (Available), Red (Occupied), Yellow (Reserved).
+        Visual status map for all 30 parking bays. Green (Available), Red (Occupied), Yellow (Reserved).
       </p>
     </div>
 
-    <!-- Map Filter Pills -->
+    <!-- Category Filter Pills -->
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
       <a href="{{ url_for('parking_map') }}" class="filter-pill {{ 'active' if category_filter == 'All' and status_filter == 'All' else '' }}">
         All 30 Slots
@@ -32,80 +32,79 @@
 
   <div class="card-body">
     
-    <!-- MAP TOP CONTROLS & STATUS LEGEND -->
-    <div class="parking-lot-header">
+    <!-- TOOLBAR & STATUS LEGEND -->
+    <div class="parking-map-toolbar">
       <div class="map-legend">
         <div class="legend-item">
-          <span class="legend-badge legend-available"></span>
-          <span>Available (Green) &mdash; <strong>{{ global_summary.available_slots }}</strong></span>
+          <span class="legend-dot available"></span>
+          <span>Available &bull; <strong>{{ global_summary.available_slots }}</strong></span>
         </div>
         <div class="legend-item">
-          <span class="legend-badge legend-occupied"></span>
-          <span>Occupied (Red) &mdash; <strong>{{ global_summary.occupied_slots }}</strong></span>
+          <span class="legend-dot occupied"></span>
+          <span>Occupied &bull; <strong>{{ global_summary.occupied_slots }}</strong></span>
         </div>
         <div class="legend-item">
-          <span class="legend-badge legend-reserved"></span>
-          <span>Reserved (Yellow) &mdash; <strong>{{ global_summary.reserved_slots }}</strong></span>
+          <span class="legend-dot reserved"></span>
+          <span>Reserved &bull; <strong>{{ global_summary.reserved_slots }}</strong></span>
         </div>
       </div>
 
       <div class="filter-pills">
-        <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); align-self: center;">Status Filter:</span>
-        <a href="{{ url_for('parking_map', category=category_filter, status='All') }}" class="filter-pill {{ 'active' if status_filter == 'All' else '' }}">All Status</a>
-        <a href="{{ url_for('parking_map', category=category_filter, status='available') }}" class="filter-pill {{ 'active' if status_filter == 'available' else '' }}">Only Available</a>
-        <a href="{{ url_for('parking_map', category=category_filter, status='occupied') }}" class="filter-pill {{ 'active' if status_filter == 'occupied' else '' }}">Only Occupied</a>
-        <a href="{{ url_for('parking_map', category=category_filter, status='reserved') }}" class="filter-pill {{ 'active' if status_filter == 'reserved' else '' }}">Only Reserved</a>
+        <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); align-self: center;">Status:</span>
+        <a href="{{ url_for('parking_map', category=category_filter, status='All') }}" class="filter-pill {{ 'active' if status_filter == 'All' else '' }}">All</a>
+        <a href="{{ url_for('parking_map', category=category_filter, status='available') }}" class="filter-pill {{ 'active' if status_filter == 'available' else '' }}">Available</a>
+        <a href="{{ url_for('parking_map', category=category_filter, status='occupied') }}" class="filter-pill {{ 'active' if status_filter == 'occupied' else '' }}">Occupied</a>
+        <a href="{{ url_for('parking_map', category=category_filter, status='reserved') }}" class="filter-pill {{ 'active' if status_filter == 'reserved' else '' }}">Reserved</a>
       </div>
     </div>
 
-    <!-- PARKING LOT VISUAL CONTAINER -->
-    <div class="parking-lot-container">
+    <!-- PARKING MAP GRID -->
+    <div class="parking-map-container">
       
       <!-- ZONE 1: TWO-WHEELER BAYS (S-01 to S-06) -->
-      <div class="parking-bay-section">
-        <div class="bay-title">
+      <div style="margin-bottom: 1.5rem;">
+        <div class="zone-header">
           <span>🏍️ Zone A: Two-Wheeler Motorcycle / Scooter Bays (Slots S-01 to S-06)</span>
         </div>
         <div class="slots-grid">
           {% for slot in slots if slot.id <= 6 %}
-            {% set active_info = active_vehicles.get(slot.current_vehicle) if slot.current_vehicle else none %}
-            <div class="slot-card status-{{ slot.status }}" 
+            <div class="slot-box status-{{ slot.status }}"
                  {% if slot.status == 'available' %}
                    onclick="openParkModal('{{ slot.id }}', '{{ slot.slot_number }}', '{{ slot.category }}')"
                  {% endif %}>
-              <div class="slot-top">
-                <span class="slot-number-badge">{{ slot.slot_number }}</span>
-                <span class="slot-status-dot"></span>
+              <div class="slot-header">
+                <span class="slot-id-pill">{{ slot.slot_number }}</span>
+                <span class="slot-indicator-dot"></span>
               </div>
-              <div class="slot-category-tag">🏍️ {{ slot.category }}</div>
+              <div class="slot-cat-badge">🏍️ {{ slot.category }}</div>
               
-              <div class="slot-body">
+              <div class="slot-main">
                 {% if slot.status == 'occupied' %}
-                  <div class="slot-vehicle-num">{{ slot.current_vehicle }}</div>
+                  <div class="license-plate-mini">{{ slot.current_vehicle }}</div>
                   <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem;">
                     <span data-entry-time="{{ slot.entry_time }}">Calculating...</span>
                   </div>
                 {% elif slot.status == 'reserved' %}
-                  <div class="slot-reserved-hint">🔒 RESERVED</div>
+                  <div class="slot-reserved-text">🔒 RESERVED</div>
                 {% else %}
-                  <div class="slot-available-hint">✨ AVAILABLE</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted);">Click to park</div>
+                  <div class="slot-available-text">✨ AVAILABLE</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">Click to park</div>
                 {% endif %}
               </div>
 
-              <div class="slot-footer">
+              <div class="slot-actions">
                 {% if slot.status == 'occupied' %}
-                  <button type="button" class="btn btn-danger btn-sm slot-action-btn"
+                  <button type="button" class="btn btn-danger btn-sm"
                           onclick="event.stopPropagation(); openExitModal('{{ slot.current_vehicle }}', '{{ slot.slot_number }}', '{{ slot.category }}', '{{ slot.entry_time }}')">
-                    Exit Vehicle
+                    Exit &amp; Bill
                   </button>
                 {% elif slot.status == 'reserved' %}
                   <form action="{{ url_for('toggle_reserve', slot_id=slot.id) }}" method="POST" style="width: 100%;" onclick="event.stopPropagation();">
-                    <button type="submit" class="btn btn-secondary btn-sm slot-action-btn">Unreserve</button>
+                    <button type="submit" class="btn btn-secondary btn-sm">Unreserve</button>
                   </form>
                 {% else %}
                   <form action="{{ url_for('toggle_reserve', slot_id=slot.id) }}" method="POST" style="width: 100%;" onclick="event.stopPropagation();">
-                    <button type="submit" class="btn btn-secondary btn-sm slot-action-btn" title="Mark slot as reserved">Reserve</button>
+                    <button type="submit" class="btn btn-secondary btn-sm">Reserve</button>
                   </form>
                 {% endif %}
               </div>
@@ -114,53 +113,53 @@
         </div>
       </div>
 
-      <!-- DRIVE LANE 1 -->
-      <div class="drive-lane"></div>
+      <!-- DRIVEWAY -->
+      <div class="driveway-lane"></div>
 
-      <!-- ZONE 2: FOUR-WHEELER BAYS NORTH (S-07 to S-14) -->
-      <div class="parking-bay-section">
-        <div class="bay-title">
+      <!-- ZONE 2: FOUR-WHEELER NORTH BAYS (S-07 to S-14) -->
+      <div style="margin-bottom: 1.5rem;">
+        <div class="zone-header">
           <span>🚗 Zone B: Four-Wheeler North Bays (Slots S-07 to S-14)</span>
         </div>
         <div class="slots-grid">
           {% for slot in slots if slot.id >= 7 and slot.id <= 14 %}
-            <div class="slot-card status-{{ slot.status }}"
+            <div class="slot-box status-{{ slot.status }}"
                  {% if slot.status == 'available' %}
                    onclick="openParkModal('{{ slot.id }}', '{{ slot.slot_number }}', '{{ slot.category }}')"
                  {% endif %}>
-              <div class="slot-top">
-                <span class="slot-number-badge">{{ slot.slot_number }}</span>
-                <span class="slot-status-dot"></span>
+              <div class="slot-header">
+                <span class="slot-id-pill">{{ slot.slot_number }}</span>
+                <span class="slot-indicator-dot"></span>
               </div>
-              <div class="slot-category-tag">🚗 {{ slot.category }}</div>
+              <div class="slot-cat-badge">🚗 {{ slot.category }}</div>
               
-              <div class="slot-body">
+              <div class="slot-main">
                 {% if slot.status == 'occupied' %}
-                  <div class="slot-vehicle-num">{{ slot.current_vehicle }}</div>
+                  <div class="license-plate-mini">{{ slot.current_vehicle }}</div>
                   <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem;">
                     <span data-entry-time="{{ slot.entry_time }}">Calculating...</span>
                   </div>
                 {% elif slot.status == 'reserved' %}
-                  <div class="slot-reserved-hint">🔒 RESERVED</div>
+                  <div class="slot-reserved-text">🔒 RESERVED</div>
                 {% else %}
-                  <div class="slot-available-hint">✨ AVAILABLE</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted);">Click to park</div>
+                  <div class="slot-available-text">✨ AVAILABLE</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">Click to park</div>
                 {% endif %}
               </div>
 
-              <div class="slot-footer">
+              <div class="slot-actions">
                 {% if slot.status == 'occupied' %}
-                  <button type="button" class="btn btn-danger btn-sm slot-action-btn"
+                  <button type="button" class="btn btn-danger btn-sm"
                           onclick="event.stopPropagation(); openExitModal('{{ slot.current_vehicle }}', '{{ slot.slot_number }}', '{{ slot.category }}', '{{ slot.entry_time }}')">
-                    Exit Vehicle
+                    Exit &amp; Bill
                   </button>
                 {% elif slot.status == 'reserved' %}
                   <form action="{{ url_for('toggle_reserve', slot_id=slot.id) }}" method="POST" style="width: 100%;" onclick="event.stopPropagation();">
-                    <button type="submit" class="btn btn-secondary btn-sm slot-action-btn">Unreserve</button>
+                    <button type="submit" class="btn btn-secondary btn-sm">Unreserve</button>
                   </form>
                 {% else %}
                   <form action="{{ url_for('toggle_reserve', slot_id=slot.id) }}" method="POST" style="width: 100%;" onclick="event.stopPropagation();">
-                    <button type="submit" class="btn btn-secondary btn-sm slot-action-btn">Reserve</button>
+                    <button type="submit" class="btn btn-secondary btn-sm">Reserve</button>
                   </form>
                 {% endif %}
               </div>
@@ -169,53 +168,53 @@
         </div>
       </div>
 
-      <!-- DRIVE LANE 2 -->
-      <div class="drive-lane"></div>
+      <!-- DRIVEWAY -->
+      <div class="driveway-lane"></div>
 
-      <!-- ZONE 3: FOUR-WHEELER BAYS SOUTH (S-15 to S-22) -->
-      <div class="parking-bay-section">
-        <div class="bay-title">
+      <!-- ZONE 3: FOUR-WHEELER SOUTH BAYS (S-15 to S-22) -->
+      <div style="margin-bottom: 1.5rem;">
+        <div class="zone-header">
           <span>🚗 Zone C: Four-Wheeler South Bays (Slots S-15 to S-22)</span>
         </div>
         <div class="slots-grid">
           {% for slot in slots if slot.id >= 15 and slot.id <= 22 %}
-            <div class="slot-card status-{{ slot.status }}"
+            <div class="slot-box status-{{ slot.status }}"
                  {% if slot.status == 'available' %}
                    onclick="openParkModal('{{ slot.id }}', '{{ slot.slot_number }}', '{{ slot.category }}')"
                  {% endif %}>
-              <div class="slot-top">
-                <span class="slot-number-badge">{{ slot.slot_number }}</span>
-                <span class="slot-status-dot"></span>
+              <div class="slot-header">
+                <span class="slot-id-pill">{{ slot.slot_number }}</span>
+                <span class="slot-indicator-dot"></span>
               </div>
-              <div class="slot-category-tag">🚗 {{ slot.category }}</div>
+              <div class="slot-cat-badge">🚗 {{ slot.category }}</div>
               
-              <div class="slot-body">
+              <div class="slot-main">
                 {% if slot.status == 'occupied' %}
-                  <div class="slot-vehicle-num">{{ slot.current_vehicle }}</div>
+                  <div class="license-plate-mini">{{ slot.current_vehicle }}</div>
                   <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem;">
                     <span data-entry-time="{{ slot.entry_time }}">Calculating...</span>
                   </div>
                 {% elif slot.status == 'reserved' %}
-                  <div class="slot-reserved-hint">🔒 RESERVED</div>
+                  <div class="slot-reserved-text">🔒 RESERVED</div>
                 {% else %}
-                  <div class="slot-available-hint">✨ AVAILABLE</div>
-                  <div style="font-size: 0.7rem; color: var(--text-muted);">Click to park</div>
+                  <div class="slot-available-text">✨ AVAILABLE</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">Click to park</div>
                 {% endif %}
               </div>
 
-              <div class="slot-footer">
+              <div class="slot-actions">
                 {% if slot.status == 'occupied' %}
-                  <button type="button" class="btn btn-danger btn-sm slot-action-btn"
+                  <button type="button" class="btn btn-danger btn-sm"
                           onclick="event.stopPropagation(); openExitModal('{{ slot.current_vehicle }}', '{{ slot.slot_number }}', '{{ slot.category }}', '{{ slot.entry_time }}')">
-                    Exit Vehicle
+                    Exit &amp; Bill
                   </button>
                 {% elif slot.status == 'reserved' %}
                   <form action="{{ url_for('toggle_reserve', slot_id=slot.id) }}" method="POST" style="width: 100%;" onclick="event.stopPropagation();">
-                    <button type="submit" class="btn btn-secondary btn-sm slot-action-btn">Unreserve</button>
+                    <button type="submit" class="btn btn-secondary btn-sm">Unreserve</button>
                   </form>
                 {% else %}
                   <form action="{{ url_for('toggle_reserve', slot_id=slot.id) }}" method="POST" style="width: 100%;" onclick="event.stopPropagation();">
-                    <button type="submit" class="btn btn-secondary btn-sm slot-action-btn">Reserve</button>
+                    <button type="submit" class="btn btn-secondary btn-sm">Reserve</button>
                   </form>
                 {% endif %}
               </div>
@@ -224,56 +223,56 @@
         </div>
       </div>
 
-      <!-- DRIVE LANE 3 -->
-      <div class="drive-lane"></div>
+      <!-- DRIVEWAY -->
+      <div class="driveway-lane"></div>
 
-      <!-- ZONE 4: EV CHARGING & RESERVED/VIP (S-23 to S-30) -->
+      <!-- ZONE 4: EV CHARGING & RESERVED (S-23 to S-30) -->
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
         
         <!-- SUB-BAY: EV CHARGING (S-23 to S-26) -->
-        <div class="parking-bay-section">
-          <div class="bay-title">
+        <div>
+          <div class="zone-header">
             <span>⚡ Zone D: EV Fast Charging Bays (S-23 to S-26)</span>
           </div>
-          <div class="slots-grid" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
+          <div class="slots-grid" style="grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));">
             {% for slot in slots if slot.id >= 23 and slot.id <= 26 %}
-              <div class="slot-card status-{{ slot.status }}"
+              <div class="slot-box status-{{ slot.status }}"
                    {% if slot.status == 'available' %}
                      onclick="openParkModal('{{ slot.id }}', '{{ slot.slot_number }}', '{{ slot.category }}')"
                    {% endif %}>
-                <div class="slot-top">
-                  <span class="slot-number-badge">{{ slot.slot_number }}</span>
-                  <span class="slot-status-dot"></span>
+                <div class="slot-header">
+                  <span class="slot-id-pill">{{ slot.slot_number }}</span>
+                  <span class="slot-indicator-dot"></span>
                 </div>
-                <div class="slot-category-tag">⚡ {{ slot.category }}</div>
+                <div class="slot-cat-badge">⚡ {{ slot.category }}</div>
                 
-                <div class="slot-body">
+                <div class="slot-main">
                   {% if slot.status == 'occupied' %}
-                    <div class="slot-vehicle-num">{{ slot.current_vehicle }}</div>
+                    <div class="license-plate-mini">{{ slot.current_vehicle }}</div>
                     <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem;">
                       <span data-entry-time="{{ slot.entry_time }}">Calculating...</span>
                     </div>
                   {% elif slot.status == 'reserved' %}
-                    <div class="slot-reserved-hint">🔒 RESERVED</div>
+                    <div class="slot-reserved-text">🔒 RESERVED</div>
                   {% else %}
-                    <div class="slot-available-hint">✨ AVAILABLE</div>
-                    <div style="font-size: 0.7rem; color: var(--text-muted);">Click to park</div>
+                    <div class="slot-available-text">✨ AVAILABLE</div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted);">Click to park</div>
                   {% endif %}
                 </div>
 
-                <div class="slot-footer">
+                <div class="slot-actions">
                   {% if slot.status == 'occupied' %}
-                    <button type="button" class="btn btn-danger btn-sm slot-action-btn"
+                    <button type="button" class="btn btn-danger btn-sm"
                             onclick="event.stopPropagation(); openExitModal('{{ slot.current_vehicle }}', '{{ slot.slot_number }}', '{{ slot.category }}', '{{ slot.entry_time }}')">
-                      Exit Vehicle
+                      Exit &amp; Bill
                     </button>
                   {% elif slot.status == 'reserved' %}
                     <form action="{{ url_for('toggle_reserve', slot_id=slot.id) }}" method="POST" style="width: 100%;" onclick="event.stopPropagation();">
-                      <button type="submit" class="btn btn-secondary btn-sm slot-action-btn">Unreserve</button>
+                      <button type="submit" class="btn btn-secondary btn-sm">Unreserve</button>
                     </form>
                   {% else %}
                     <form action="{{ url_for('toggle_reserve', slot_id=slot.id) }}" method="POST" style="width: 100%;" onclick="event.stopPropagation();">
-                      <button type="submit" class="btn btn-secondary btn-sm slot-action-btn">Reserve</button>
+                      <button type="submit" class="btn btn-secondary btn-sm">Reserve</button>
                     </form>
                   {% endif %}
                 </div>
@@ -283,49 +282,49 @@
         </div>
 
         <!-- SUB-BAY: RESERVED & ACCESSIBLE (S-27 to S-30) -->
-        <div class="parking-bay-section">
-          <div class="bay-title">
-            <span>👑 Zone E: Reserved / VIP / Accessible Bays (S-27 to S-30)</span>
+        <div>
+          <div class="zone-header">
+            <span>👑 Zone E: Reserved / Priority Bays (S-27 to S-30)</span>
           </div>
-          <div class="slots-grid" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
+          <div class="slots-grid" style="grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));">
             {% for slot in slots if slot.id >= 27 and slot.id <= 30 %}
-              <div class="slot-card status-{{ slot.status }}"
+              <div class="slot-box status-{{ slot.status }}"
                    {% if slot.status == 'available' %}
                      onclick="openParkModal('{{ slot.id }}', '{{ slot.slot_number }}', '{{ slot.category }}')"
                    {% endif %}>
-                <div class="slot-top">
-                  <span class="slot-number-badge">{{ slot.slot_number }}</span>
-                  <span class="slot-status-dot"></span>
+                <div class="slot-header">
+                  <span class="slot-id-pill">{{ slot.slot_number }}</span>
+                  <span class="slot-indicator-dot"></span>
                 </div>
-                <div class="slot-category-tag">👑 {{ slot.category }}</div>
+                <div class="slot-cat-badge">👑 {{ slot.category }}</div>
                 
-                <div class="slot-body">
+                <div class="slot-main">
                   {% if slot.status == 'occupied' %}
-                    <div class="slot-vehicle-num">{{ slot.current_vehicle }}</div>
+                    <div class="license-plate-mini">{{ slot.current_vehicle }}</div>
                     <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.25rem;">
                       <span data-entry-time="{{ slot.entry_time }}">Calculating...</span>
                     </div>
                   {% elif slot.status == 'reserved' %}
-                    <div class="slot-reserved-hint">🔒 RESERVED (Yellow)</div>
+                    <div class="slot-reserved-text">🔒 RESERVED</div>
                   {% else %}
-                    <div class="slot-available-hint">✨ AVAILABLE</div>
-                    <div style="font-size: 0.7rem; color: var(--text-muted);">Click to park</div>
+                    <div class="slot-available-text">✨ AVAILABLE</div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted);">Click to park</div>
                   {% endif %}
                 </div>
 
-                <div class="slot-footer">
+                <div class="slot-actions">
                   {% if slot.status == 'occupied' %}
-                    <button type="button" class="btn btn-danger btn-sm slot-action-btn"
+                    <button type="button" class="btn btn-danger btn-sm"
                             onclick="event.stopPropagation(); openExitModal('{{ slot.current_vehicle }}', '{{ slot.slot_number }}', '{{ slot.category }}', '{{ slot.entry_time }}')">
-                      Exit Vehicle
+                      Exit &amp; Bill
                     </button>
                   {% elif slot.status == 'reserved' %}
                     <form action="{{ url_for('toggle_reserve', slot_id=slot.id) }}" method="POST" style="width: 100%;" onclick="event.stopPropagation();">
-                      <button type="submit" class="btn btn-secondary btn-sm slot-action-btn">Unreserve</button>
+                      <button type="submit" class="btn btn-secondary btn-sm">Unreserve</button>
                     </form>
                   {% else %}
                     <form action="{{ url_for('toggle_reserve', slot_id=slot.id) }}" method="POST" style="width: 100%;" onclick="event.stopPropagation();">
-                      <button type="submit" class="btn btn-secondary btn-sm slot-action-btn">Reserve</button>
+                      <button type="submit" class="btn btn-secondary btn-sm">Reserve</button>
                     </form>
                   {% endif %}
                 </div>

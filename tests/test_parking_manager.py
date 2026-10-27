@@ -125,6 +125,9 @@ class TestParkingManagerDSA(unittest.TestCase):
         self.assertTrue(exit_res["success"])
         self.assertEqual(exit_res["summary"]["duration_minutes"], 120)
         self.assertEqual(exit_res["summary"]["fee"], 80.0)
+        self.assertEqual(exit_res["summary"]["base_fee"], 20.0)
+        self.assertEqual(exit_res["summary"]["hourly_rate"], 30.0)
+        self.assertEqual(exit_res["summary"]["hours_billed"], 2)
 
         # Check vehicle is removed from active_vehicles dict (O(1))
         self.assertNotIn("KA-03-EX-1234", self.pm.active_vehicles)
@@ -135,6 +138,23 @@ class TestParkingManagerDSA(unittest.TestCase):
         self.assertEqual(history[0]["vehicle_number"], "KA-03-EX-1234")
         self.assertEqual(history[0]["duration_minutes"], 120)
         self.assertEqual(history[0]["fee"], 80.0)
+
+    def test_vehicle_exit_defensive_against_type_error(self):
+        """Verify exit_vehicle handles empty string, string integers, and None without TypeError."""
+        self.pm.park_vehicle("DEF-CAR-1", "Four-Wheeler")
+        
+        # Test simulated_minutes as empty string "" (the exact bug triggering TypeError)
+        res_empty = self.pm.exit_vehicle("DEF-CAR-1", simulated_minutes="")
+        self.assertTrue(res_empty["success"])
+        self.assertIn("summary", res_empty)
+
+        # Test simulated_minutes as string integer "45"
+        self.pm.park_vehicle("DEF-CAR-2", "Two-Wheeler")
+        res_str = self.pm.exit_vehicle("DEF-CAR-2", simulated_minutes="45")
+        self.assertTrue(res_str["success"])
+        self.assertEqual(res_str["summary"]["duration_minutes"], 45)
+        # Two-Wheeler: Base 10 + 15*1 = Rs. 25
+        self.assertEqual(res_str["summary"]["fee"], 25.0)
 
     def test_automatic_fifo_queue_dispatch_on_exit(self):
         """Verify that when an occupied slot is freed, the head of FIFO queue is automatically assigned."""

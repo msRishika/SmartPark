@@ -1,239 +1,156 @@
-# SmartPark — Smart Parking Slot Allocation System
-> **An Advanced Data Structures & Algorithms (DSA) Web Project**  
-> Built with **Python, Flask, SQLite, collections.deque, Hashing, Linear Search, and Merge/Quick Sort**.
+# SmartPark — Professional Parking Management System
+> Modern, elegant, and intelligent parking management web application built with Python, Flask, and SQLite.
 
 ---
 
-## 📌 Project Overview
-**SmartPark** is a full-featured, responsive college-level DSA project that simulates an intelligent real-time parking lot management system. It manages **30 designated parking slots** across multiple vehicle categories (Two-Wheeler, Four-Wheeler, EV Charging, Reserved/VIP).
+## 🌟 Overview & Key Features
 
-Unlike typical web applications that leave algorithms on paper, **SmartPark connects real Data Structures and Algorithms directly to live application features**:
-1. **Hashing (Python Dictionary)**: $O(1)$ active vehicle lookup and duplicate entry prevention.
-2. **Searching (Linear Search)**: $O(N)$ sequential scanning to allocate the first eligible vacant slot.
-3. **Queue (`collections.deque`)**: True $O(1)$ FIFO waiting queue when parking is full, with automatic dispatch when a slot is released.
-4. **Sorting (Merge Sort & Quick Sort)**: Custom $O(N \log N)$ recursive divide-and-conquer algorithms to sort completed parking sessions by Vehicle Number, Entry Time, Duration, or Fee.
+**SmartPark** is a full-featured, responsive parking facility management web application designed for real-world parking operations. It manages **30 numbered parking bays** across dedicated vehicle categories, featuring real-time occupancy statistics, an interactive visual parking map, automated queue allocation, and an integrated billing & invoicing engine.
+
+### Core Capabilities:
+- **📊 Real-Time Operations Dashboard**:
+  - Live capacity KPI summary cards (Total, Available, Occupied, Reserved, Waiting List, Occupancy Rate).
+  - Responsive layout that adapts to all screen sizes without horizontal clipping.
+  - Dynamic visual charts (Capacity Breakdown Doughnut Chart & Category Distribution Bar Chart powered by Chart.js).
+  - Focused live facility overview table with utilization progress meters.
+- **🅿️ Interactive Parking Map**:
+  - Visual grid of all 30 numbered slots (`S-01` to `S-30`).
+  - Clear color-coding: 🟢 **Green** (Available), 🔴 **Red** (Occupied), 🟡 **Yellow** (Reserved).
+  - Category filtering: Two-Wheeler, Four-Wheeler, EV Fast Charging, and Reserved/VIP.
+  - Direct 1-click slot actions (Quick Park, Reservation Toggle, and Exit & Bill).
+- **🚗 Active Vehicles Directory**:
+  - Real-time directory of all currently parked vehicles.
+  - Live duration counters ticking in real time.
+  - Rapid search by vehicle registration number, slot, or category.
+  - Instant access to the Vehicle Exit & Billing workflow.
+  - Receipt appears **strictly on this page** upon exit completion.
+- **⏳ Customer Waiting List**:
+  - Automatic waitlisting in FIFO order when parking slots for a category are fully occupied.
+  - Automatic slot dispatch: when an occupied vehicle exits, the system automatically allocates the freed slot to the first eligible vehicle in line.
+- **📜 Parking & Billing History**:
+  - Complete history of past parking sessions with vehicle registration number, slot, entry/exit timestamps, total duration, and charges.
+  - Instant search and sorting by Exit Time, Entry Time, Duration, Charges, or Vehicle Number.
+  - Printable report view.
+- **🧾 Dedicated Receipt Print View**:
+  - Official Parking Invoice Receipt generated upon vehicle exit.
+  - When clicking **"Print Receipt"**, prints **ONLY the receipt** on a single paper-friendly page, hiding sidebars, navigation, topbar, and tables.
+  - Dismissing the receipt closes it cleanly without deleting completed parking history.
 
 ---
 
-## 🏗️ Architecture & Technology Stack
-- **Backend**: Python 3.x, Flask (Lightweight WSGI framework)
-- **DSA Engine**: `parking_manager.py` (Strictly separated DSA layer)
-- **Database**: SQLite3 (`smartpark.db`) with parameterized queries, indexes, and ACID transactions
-- **Frontend**: Responsive HTML5, CSS3 (Modern clean light theme), Vanilla JavaScript
-- **Visualizations**: Chart.js for real-time capacity and category distribution charts
-- **Testing**: Python `unittest` suite with 15 automated test cases
+## 🎨 Premium Theme & UI Design
+The application features a modern, executive light palette:
+- **Deep Navy Blue** (`#0f172a`, `#1e293b`) for structured contrast, sidebar elevation, and typography.
+- **Teal Accent** (`#0d9488`, `#14b8a6`, `#f0fdfa`) for active navigation, key action buttons, and highlights.
+- **Soft Blue & Slate** (`#0284c7`, `#38bdf8`, `#f8fafc`) for cards, progress bars, and informative badges.
+- **Status Accents**: Emerald Green for Available bays, Coral Red for Occupied bays, and Amber for Reserved/Waitlisted items.
 
 ---
 
-## 📁 Project Directory Structure
+## 📁 Project Structure
 ```
 SmartPark/
-├── app.py                      # Flask routes, API endpoints & controller logic
-├── parking_manager.py          # Core DSA Engine (Hashing, Linear Search, Deque, Merge/Quick Sort)
-├── database.py                 # SQLite schema initialization, connection & persistence helpers
-├── schema.sql                  # Database schema definition with table structures and indexes
-├── requirements.txt            # Project dependencies (Flask)
-├── README.md                   # Complete documentation & faculty viva demonstration guide
+├── app.py                      # Flask routes, API endpoints, session management & billing controller
+├── parking_manager.py          # Core allocation, exit & billing engine, collections.deque queue
+├── database.py                 # SQLite initialization, connections & persistence helpers
+├── schema.sql                  # Database schema definition with tables and indexes
+├── requirements.txt            # Python dependencies (Flask)
+├── README.md                   # Full documentation & run guide
 ├── static/
 │   ├── css/
-│   │   └── style.css           # Modern light theme CSS with responsive grid and parking map styling
+│   │   └── style.css           # Premium UI styling + dedicated @media print layout
 │   └── js/
-│       └── script.js           # Frontend interactivity, Chart.js integrations, and live tickers
+│       └── script.js           # Live tickers, Chart.js integrations, bill calculation & modal controls
 ├── templates/
-│   ├── base.html               # Shared layout with responsive sidebar, navbar, and modals
-│   ├── dashboard.html          # KPI cards, real-time Chart.js charts, and live DSA telemetry
-│   ├── parking_map.html        # Visual 30-slot parking grid (Green=Available, Red=Occupied, Yellow=Reserved)
-│   ├── vehicles.html           # Active parked vehicles directory with instant O(1) search
-│   ├── waiting_queue.html      # FIFO queue visualizer using collections.deque
-│   ├── history.html            # Searchable and sortable parking records with algorithm telemetry
-│   └── dsa_insights.html       # Academic viva guide with Big-O matrix and complexity proofs
+│   ├── base.html               # Shared layout with 5-section sidebar and topbar
+│   ├── dashboard.html          # Responsive KPI cards, capacity charts, and live category overview
+│   ├── parking_map.html        # 30-slot visual parking grid with real-time status
+│   ├── vehicles.html           # Active vehicles directory with dedicated printable receipt area
+│   ├── waiting_list.html       # Customer waiting list with FIFO queue flow
+│   └── history.html            # Searchable and sortable completed parking sessions
 └── tests/
-    ├── test_parking_manager.py # Unit tests for all DSA operations and edge cases
-    └── test_app.py             # Integration tests for Flask routes, forms, and API endpoints
+    ├── test_parking_manager.py # Unit tests for allocation, exit, defensive billing & persistence
+    └── test_app.py             # Integration tests for routes, receipt scoping, and dashboard sizing
 ```
 
 ---
 
-## 🧠 Data Structures & Algorithms (DSA) Implementation
+## 💰 Parking Rates & Billing Rules
 
-### 1. Hashing — Python Dictionary (`dict`)
-- **Applied In**: `pm.active_vehicles` in `parking_manager.py`.
-- **Purpose**: Rapid $O(1)$ duplicate checking when vehicles enter and instant session lookup when vehicles exit.
-- **Why It Matters**: Prevents duplicate entry of vehicles without scanning 30 slots or running costly database queries.
-- **Complexity**:
-  - **Lookup / Insertion / Deletion**: $O(1)$ Average Case, $O(N)$ Worst Case (extreme hash collisions).
-  - **Space**: $O(K)$ where $K$ is the number of active parked vehicles.
+Charges are calculated transparently using established category rates:
 
-### 2. Searching — Linear Search
-- **Applied In**: `find_first_available_slot(vehicle_category)` in `parking_manager.py`.
-- **Purpose**: Sequentially scans the 30 parking slots to find the first slot that is both `available` and `eligible` for the vehicle category.
-- **Why It Matters**: Accurately models a physical parking lot where drivers take the first open stall along the driveway.
-- **Complexity**:
-  - **Best Case**: $O(1)$ (First slot checked is vacant and eligible).
-  - **Worst Case**: $O(N)$ (Only the 30th slot is vacant, or all slots are occupied).
-  - **Auxiliary Space**: $O(1)$.
+| Vehicle Category | Dedicated Bays | Base Admission Fee | Hourly Rate |
+| :--- | :---: | :---: | :---: |
+| **Two-Wheeler** | Slots S-01 to S-06 (6 bays) | Rs. 10.00 | Rs. 15.00 / hr |
+| **Four-Wheeler** | Slots S-07 to S-22 (16 bays) | Rs. 20.00 | Rs. 30.00 / hr |
+| **EV Charging** | Slots S-23 to S-26 (4 bays) | Rs. 25.00 | Rs. 40.00 / hr |
+| **Reserved / VIP** | Slots S-27 to S-30 (4 bays) | Rs. 30.00 | Rs. 50.00 / hr |
 
-### 3. Queue — First-In, First-Out (`collections.deque`)
-- **Applied In**: `pm.waiting_queue = deque()` in `parking_manager.py`.
-- **Purpose**: Manages vehicles waiting for a slot when all eligible slots are full.
-- **Why `collections.deque` over Python `list`**:
-  - Python `list.pop(0)` takes $O(N)$ because all $N-1$ remaining items must be shifted in memory.
-  - Python's `collections.deque` is implemented as a doubly linked list of memory blocks, guaranteeing true $O(1)$ time complexity for both `append()` (enqueue) and `popleft()` (dequeue).
-- **Auto-Allocation Trigger**: When any vehicle exits, the system automatically inspects the deque in FIFO order and assigns the newly freed slot to the first eligible waiting vehicle.
-
-### 4. Sorting — Merge Sort & Quick Sort
-- **Applied In**: `merge_sort_history()` and `quick_sort_history()` in `parking_manager.py`.
-- **Purpose**: Sorts completed parking sessions by Vehicle Number, Entry Time, Duration, or Fee.
-- **Why Merge Sort**:
-  - Stable divide-and-conquer algorithm.
-  - Guaranteed worst-case time complexity of $O(N \log N)$ governed by recurrence relation:
-    $$T(N) = 2T(N/2) + O(N) \implies O(N \log N)$$
-- **Telemetry Counter**: Both algorithms track the exact number of comparisons made, which is displayed directly in the UI for academic evaluation.
-
-### Master Complexity Matrix
-| Operation | Algorithm / Structure | Best Case | Average Case | Worst Case | Space Complexity |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| Duplicate Check | Hash Map (`dict`) | $O(1)$ | $O(1)$ | $O(N)$ | $O(N)$ |
-| Slot Search | Linear Search | $O(1)$ | $O(N)$ | $O(N)$ | $O(1)$ |
-| Enqueue Waiting | `collections.deque.append()` | $O(1)$ | $O(1)$ | $O(1)$ | $O(1)$ |
-| Dequeue Waiting | `collections.deque.popleft()` | $O(1)$ | $O(1)$ | $O(1)$ | $O(1)$ |
-| History Sorting | Merge Sort | $O(N \log N)$ | $O(N \log N)$ | $O(N \log N)$ | $O(N)$ |
-| History Sorting | Quick Sort | $O(N \log N)$ | $O(N \log N)$ | $O(N^2)$ | $O(\log N)$ |
+$$\text{Hours Billed} = \lceil \text{Duration in Minutes} / 60 \rceil$$
+$$\text{Total Fee} = \text{Base Fee} + (\text{Hourly Rate} \times \text{Hours Billed})$$
 
 ---
 
-## 🅿️ Parking Lot Slot Distribution (30 Slots)
-- **Slots S-01 to S-06 (6 Slots)**: Dedicated Two-Wheeler Bay (Motorcycles / Scooters)
-- **Slots S-07 to S-22 (16 Slots)**: Four-Wheeler Bays (Cars / Sedans / SUVs)
-- **Slots S-23 to S-26 (4 Slots)**: EV Fast Charging Bays
-- **Slots S-27 to S-30 (4 Slots)**: Reserved / Accessible / Priority Bays
+## 🚀 How to Run on Windows
 
-### Real-Time Color Coding:
-- 🟢 **Green**: Available for immediate parking.
-- 🔴 **Red**: Currently occupied by a parked vehicle.
-- 🟡 **Yellow**: Reserved (VIP, maintenance, or accessible).
-
----
-
-## 🚀 Step-by-Step Installation & Run Guide on Windows
-
-### Prerequisites
-- Windows 10 or 11
-- Python 3.8 or higher installed and added to PATH (`python --version`)
-
-### Step 1: Open Terminal in the Project Directory
-Open **PowerShell** or **Command Prompt** and navigate to the project directory:
+### Step 1: Open Terminal in Project Directory
+Open **PowerShell** or **Command Prompt**:
 ```powershell
 cd C:\Users\msris\OneDrive\Documents\SmartPark
 ```
 
 ### Step 2: Install Dependencies
-Install Flask from `requirements.txt`:
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-### Step 3: Initialize the SQLite Database
-Initialize the 30 slots in SQLite:
-```powershell
-python database.py
-```
-*(You will see: `Database initialized successfully with 30 slots.`)*
-
-### Step 4: Run the Automated Unit Tests
-Verify all 15 test cases pass:
-```powershell
-python -m unittest discover tests
-```
-*(You will see: `Ran 15 tests in ... OK`)*
-
-### Step 5: Start the Flask Application
-Run the main application:
-```powershell
-python app.py
-```
-*(You will see: `Access web UI at: http://127.0.0.1:5000`)*
-
-### Step 6: Open in Your Web Browser
-Open any web browser (Chrome, Edge, Firefox) and navigate to:
-```
-http://127.0.0.1:5000
-```
-
----
-
-## 🎓 Faculty Viva & Demonstration Script
-When presenting this project to your college professors or examiners, follow this exact sequence to demonstrate each DSA concept effectively:
-
-### 1. Introduction to the Dashboard & Telemetry
-- Open `http://127.0.0.1:5000`.
-- Show the **KPI Cards** (Total Slots: 30, Available: 28, Reserved: 2, Waiting: 0).
-- Highlight the **Live DSA Performance Telemetry Banner**, which reports live metrics from `parking_manager.py` (Active hash keys, linear search probes, deque items, and sort comparisons).
-- Show the two live **Chart.js visualizations** (Real-Time Occupancy Breakdown & Category Distribution).
-
-### 2. Demonstrating Hashing & $O(1)$ Duplicate Rejection
-- Click the **"➕ Park Vehicle"** button in the top navigation bar.
-- Enter vehicle registration number: `KA-01-AB-1234` and select `Four-Wheeler`.
-- Click **"Allocate Slot"**. Notice it allocates `Slot S-07` via Linear Search.
-- Now, try to enter `KA-01-AB-1234` again.
-- **Viva Explanation**: *"The system immediately rejects the vehicle with an alert: 'Duplicate vehicle! Vehicle KA-01-AB-1234 is already parked in Slot S-07'. This is checked in $O(1)$ constant time using Python's in-memory dictionary `self.active_vehicles`, avoiding an unnecessary database search."*
-
-### 3. Demonstrating Linear Search ($O(N)$) on the Visual Parking Map
-- Navigate to the **🅿️ Parking Map** page.
-- Explain the 30-slot layout: Zone A (Two-Wheeler S-01 to S-06), Zone B & C (Four-Wheeler S-07 to S-22), Zone D (EV Charging S-23 to S-26), and Zone E (Reserved S-27 to S-30).
-- Point out the color coding: Green (Available), Red (Occupied), Yellow (Reserved).
-- Notice that `KA-01-AB-1234` is parked in `S-07`.
-- Park a second car: `KA-01-CD-5678`. Show that Linear Search progresses to the next available slot: `S-08`.
-
-### 4. Demonstrating the FIFO Waiting Queue (`collections.deque`)
-- To quickly demonstrate this without typing 6 vehicles manually, click the **"⚡ Demo Data"** button on the top bar.
-- Navigate to the **⏳ FIFO Queue** page.
-- Show the examiner the **Visual FIFO Flow** showing Queue Position #1 (Head) to #2 (Tail).
-- **Viva Explanation**: *"When all slots for a vehicle category are full, vehicles enter a FIFO queue. We used `collections.deque` instead of a standard Python list. If we used `list.pop(0)`, removing an element would take $O(N)$ time as memory blocks shift. `collections.deque` is a doubly linked list, giving guaranteed $O(1)$ time for both enqueue (`append`) and dequeue (`popleft`)."*
-
-### 5. Demonstrating Automatic FIFO Queue Dispatch on Vehicle Exit
-- In the top bar or on the map, find a parked Two-Wheeler (e.g. `KA-01-MJ-1001` in `S-01`).
-- Click **"Exit Vehicle"**.
-- A modal opens showing duration and billing. Select *"Simulate 30 Minutes"* and click **"Confirm Exit & Bill"**.
-- Observe the flash notification:
-  > *"FIFO Queue Dispatch: Waiting vehicle KA-02-WQ-7777 was automatically allocated freed Slot S-01!"*
-- Open the **🅿️ Parking Map**: Slot S-01 is now occupied by `KA-02-WQ-7777`.
-- Open the **⏳ FIFO Queue**: Position #1 has progressed to the next vehicle!
-
-### 6. Demonstrating Merge Sort & Quick Sort on Parking History
-- Click **📜 Parking History** in the sidebar.
-- Show the table of completed parking sessions.
-- In the sort controls:
-  - Set **Sort By Attribute** to `Duration (Minutes)`
-  - Set **Sort Order** to `Descending`
-  - Select **DSA Algorithm** as `Merge Sort (O(N log N))`
-  - Click **Apply**.
-- Highlight the **Sort Algorithm Telemetry Banner** showing the exact number of comparisons made.
-- Now switch the algorithm to `Quick Sort` and click **Apply** to show the comparison count differences.
-- **Viva Explanation**: *"Merge Sort recursively divides the list into halves ($T(N) = 2T(N/2) + O(N)$) and merges them in sorted order. It guarantees stable $O(N \log N)$ sorting even in the worst case."*
-
-### 7. Navigating to the Academic Viva Insights Page
-- Click **🧠 DSA Insights & Viva** in the sidebar.
-- Show the examiner the Master Complexity Table, code snippets, and theoretical explanations.
-
----
-
-## 🧪 Running Automated Tests
-Run the test suite anytime using Python's built-in test runner:
+### Step 3: Run the Automated Tests
+Run the test suite (20 unit and integration tests):
 ```powershell
 python -m unittest discover tests -v
 ```
-All 15 tests verify:
-- Initial 30-slot categorization
-- Sequential linear search allocation
-- $O(1)$ duplicate vehicle rejection via hashing
-- Full parking detection and FIFO queue enqueuing
-- Vehicle exit, duration billing, and history persistence
-- Automatic FIFO queue dispatch upon slot release
-- Merge Sort and Quick Sort correctness across multiple data types
-- Persistence across server restarts
+*(All 20 tests will pass cleanly).*
+
+### Step 4: Start the Web Server
+```powershell
+python app.py
+```
+*(You will see: `Web Server running at: http://127.0.0.1:5000`)*
+
+### Step 5: Open in Your Browser
+Navigate to:
+👉 **`http://127.0.0.1:5000`**
 
 ---
 
-## 📄 License & Academic Attribution
-Developed as an advanced academic Computer Science & Engineering college project demonstrating real-world applications of Data Structures and Algorithms (DSA) in Web Architecture.
+## 🔍 Verification Steps for Recent Fixes
+
+### 1. Print Only the Parking Receipt
+1. Open `http://127.0.0.1:5000/vehicles`.
+2. Click **"➕ Park New Vehicle"** and park a car (e.g. `KA-01-TEST`).
+3. Click **"Exit & Bill"** for that car and click **"Confirm and Bill"**.
+4. The parking receipt appears on top of the Active Vehicles page.
+5. Click **"🖨️ Print Receipt"**.
+6. In the browser's print preview dialog:
+   - Notice that **ONLY the receipt** is displayed.
+   - The sidebar, top navigation, search bar, active vehicles table, and buttons are hidden.
+   - The receipt is centered and fits on a single clean page.
+7. Cancel or close the print preview: the website layout on the screen remains completely unchanged.
+
+### 2. Receipt Scoped Only to Active Vehicles Page
+1. With the receipt visible on `/vehicles`:
+2. Click **Dashboard** in the sidebar. Notice the dashboard displays its normal content immediately with **no receipt card**.
+3. Click **Parking Map** &rarr; normal map content only.
+4. Click **Waiting List** &rarr; normal waitlist content only.
+5. Click **Parking History** &rarr; normal completed sessions table only.
+6. Click **Active Vehicles** again &rarr; the old receipt does not linger or reappear.
+7. Park another car and exit it &rarr; on the receipt, click **"Dismiss"** &rarr; the receipt closes immediately without deleting history or payment records.
+
+### 3. Dashboard Responsiveness & No Horizontal Overflow
+1. Open `http://127.0.0.1:5000/dashboard`.
+2. Notice that all 6 KPI cards (including the 6th card **Occupancy Rate**) are completely visible.
+3. There is **no horizontal scrollbar** at standard desktop sizes (1280px, 1366px, 1920px).
+4. Resize your browser window to a narrower width (tablet or mobile):
+   - The summary cards wrap into 3 or 2 columns smoothly.
+   - The charts resize responsively.
+   - The quick vehicle entry and live category overview stack cleanly without horizontal clipping.

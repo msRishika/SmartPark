@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">⏳ Customer Waiting List</h3>
+      <p class="card-subtitle">
+        Vehicles queued for slots in chronological order when parking capacity is reached.
+      </p>
+    </div>
+
+    <span class="badge badge-teal" style="font-size: 0.85rem; padding: 0.4rem 0.85rem;">
+      {{ queue_count }} Vehicle(s) in Waiting List
+    </span>
+  </div>
+
+  <div class="card-body">
+
+    <!-- AUTOMATED ALLOCATION NOTICE -->
+    <div class="alert alert-info" style="margin-bottom: 1.75rem; border-left: 4px solid var(--teal-primary);">
+      <div>
+        <strong style="color: var(--teal-hover);">Automated Slot Assignment:</strong>
+        <span style="font-size: 0.85rem; margin-left: 0.35rem;">
+          When an occupied slot is released, the system automatically checks this waiting list and immediately allocates the freed slot to the first eligible vehicle in line.
+        </span>
+      </div>
+    </div>
+
+    <!-- WAITING LIST TABLE -->
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Queue Position</th>
+            <th>Vehicle Number</th>
+            <th>Category</th>
+            <th>Driver Contact</th>
+            <th>Queued At</th>
+            <th>Elapsed Waiting Time</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if queue_items %}
+            {% for item in queue_items %}
+              <tr>
+                <td>
+                  <span class="badge {{ 'badge-teal' if loop.first else 'badge-navy' }}" style="font-weight: 800; font-size: 0.82rem;">
+                    {{ '#1 NEXT IN LINE' if loop.first else '#' ~ item.queue_position }}
+                  </span>
+                </td>
+                <td>
+                  <span class="license-plate-mini" style="font-size: 0.92rem; font-weight: 800;">
+                    {{ item.vehicle_number }}
+                  </span>
+                </td>
+                <td>
+                  <span class="badge badge-blue">{{ item.category }}</span>
+                </td>
+                <td style="color: var(--text-muted); font-size: 0.85rem;">
+                  {{ item.driver_contact or '—' }}
+                </td>
+                <td style="font-size: 0.84rem; color: var(--text-muted);">
+                  {{ item.created_at }}
+                </td>
+                <td>
+                  <span class="badge badge-warning" data-entry-time="{{ item.created_at }}">
+                    Waiting...
+                  </span>
+                </td>
+                <td>
+                  <form action="{{ url_for('remove_from_queue') }}" method="POST" style="display: inline;" onsubmit="return confirm('Cancel waiting entry for vehicle {{ item.vehicle_number }}?');">
+                    <input type="hidden" name="vehicle_number" value="{{ item.vehicle_number }}">
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                      <span>Remove</span>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="7" style="text-align: center; padding: 3.5rem; color: var(--text-muted);">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">✨</div>
+                <h4 style="font-weight: 700; color: var(--navy-primary); font-size: 1.1rem;">Waiting List is Clear</h4>
+                <p style="font-size: 0.88rem; margin-top: 0.35rem; color: var(--text-muted);">
+                  Eligible parking slots are currently available. Incoming vehicles will be accommodated immediately.
+                </p>
+                <div style="margin-top: 1.25rem;">
+                  <button class="btn btn-primary btn-sm" onclick="openParkModal()">
+                    <span>➕ Park a Vehicle</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

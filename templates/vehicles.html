@@ -1,12 +1,80 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="card">
+<!-- BILL RECEIPT (APPEARS ONLY ON ACTIVE VEHICLES PAGE AFTER AN EXIT) -->
+{% if receipt %}
+  <div id="receiptContainer" class="printable-receipt-area invoice-box" style="margin-bottom: 2rem;">
+    <div class="invoice-header">
+      <div>
+        <div class="invoice-brand">SmartPark Parking Receipt</div>
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
+          Official Parking Fee Invoice &bull; Generated on {{ receipt.exit_time }}
+        </div>
+      </div>
+      <span class="invoice-badge-paid">PAID &amp; COMPLETED</span>
+    </div>
+
+    <div style="text-align: center; margin: 1rem 0;">
+      <span class="invoice-plate-display">{{ receipt.vehicle_number }}</span>
+    </div>
+
+    <div class="invoice-grid">
+      <div class="invoice-row">
+        <span style="color: var(--text-muted);">Assigned Slot:</span>
+        <strong>Slot {{ receipt.slot_number }}</strong>
+      </div>
+      <div class="invoice-row">
+        <span style="color: var(--text-muted);">Vehicle Category:</span>
+        <strong>{{ receipt.category }}</strong>
+      </div>
+      <div class="invoice-row">
+        <span style="color: var(--text-muted);">Entry Time:</span>
+        <span>{{ receipt.entry_time }}</span>
+      </div>
+      <div class="invoice-row">
+        <span style="color: var(--text-muted);">Exit Time:</span>
+        <span>{{ receipt.exit_time }}</span>
+      </div>
+      <div class="invoice-row">
+        <span style="color: var(--text-muted);">Parking Duration:</span>
+        <strong>{{ receipt.duration_formatted or (receipt.duration_minutes ~ ' mins') }} ({{ receipt.duration_minutes }} mins)</strong>
+      </div>
+      <div class="invoice-row">
+        <span style="color: var(--text-muted);">Billing Rate:</span>
+        <span>Base {{ receipt.base_fee|currency }} + {{ receipt.hourly_rate|currency }}/hr</span>
+      </div>
+    </div>
+
+    <div class="invoice-total-row">
+      <span>Total Charge Paid:</span>
+      <span style="color: var(--teal-hover);">{{ receipt.fee|currency }}</span>
+    </div>
+
+    <!-- PRINT-ONLY RECEIPT FOOTER -->
+    <div class="print-footer-note" style="display: none;">
+      <div>Thank you for parking with SmartPark Parking Facility.</div>
+      <div style="font-size: 0.72rem; color: #666; margin-top: 4px;">Retain this receipt for your records. Standard tax rates applied.</div>
+    </div>
+
+    <div class="receipt-no-print" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem;">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">
+        <span>🖨️ Print Receipt</span>
+      </button>
+      <form action="{{ url_for('clear_bill') }}" method="POST" style="display: inline;">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <span>Dismiss</span>
+        </button>
+      </form>
+    </div>
+  </div>
+{% endif %}
+
+<div class="card vehicles-content-card">
   <div class="card-header">
     <div>
-      <h3 class="card-title">🚗 Active Parked Vehicles Directory</h3>
+      <h3 class="card-title">🚗 Currently Parked Vehicles</h3>
       <p class="card-subtitle">
-        Active vehicles are managed in an in-memory <strong>Python Hash Map (dict)</strong> providing <strong>O(1)</strong> lookup time.
+        Directory of all vehicles actively occupying parking slots with live duration and billing actions.
       </p>
     </div>
 
@@ -18,90 +86,101 @@
   </div>
 
   <div class="card-body">
-    <!-- SEARCH & CONTROLS -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 1rem;">
+    <!-- SEARCH & CONTROLS TOOLBAR -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
       <form action="{{ url_for('vehicles') }}" method="GET" style="display: flex; gap: 0.5rem; max-width: 420px; width: 100%;">
-        <input type="text" class="form-control" name="q" value="{{ search_query }}" placeholder="Search by vehicle # (O(1) hash lookup) or slot..." autocomplete="off">
+        <input type="text" class="form-control" name="q" value="{{ search_query }}" placeholder="Search by vehicle #, slot, or category..." autocomplete="off">
         <button type="submit" class="btn btn-secondary">Search</button>
         {% if search_query %}
-          <a href="{{ url_for('vehicles') }}" class="btn btn-secondary" title="Clear filter">Clear</a>
+          <a href="{{ url_for('vehicles') }}" class="btn btn-secondary" title="Clear search">Clear</a>
         {% endif %}
       </form>
 
-      <div style="font-size: 0.85rem; color: var(--text-muted);">
-        Showing <strong>{{ active_vehicles|length }}</strong> of <strong>{{ total_active }}</strong> active parked vehicle(s)
+      <div style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">
+        Showing <strong>{{ active_vehicles|length }}</strong> of <strong>{{ total_active }}</strong> active vehicle(s)
       </div>
     </div>
 
-    <!-- TABLE -->
+    <!-- ACTIVE VEHICLES TABLE -->
     <div class="table-responsive">
       <table class="data-table">
         <thead>
           <tr>
-            <th>Slot</th>
+            <th>Slot Assigned</th>
             <th>Vehicle Number</th>
             <th>Category</th>
             <th>Driver Contact</th>
             <th>Entry Timestamp</th>
             <th>Live Duration</th>
-            <th>DSA Lookup</th>
+            <th>Billing Rate</th>
             <th>Action</th>
           </tr>
         </thead>
         <tbody>
           {% if active_vehicles %}
             {% for veh in active_vehicles %}
+              {% set rate_info = rates.get(veh.category, {'base_fee': 20.0, 'hourly_rate': 30.0}) %}
               <tr>
                 <td>
-                  <span class="badge badge-primary" style="font-weight: 800; font-size: 0.82rem;">
+                  <span class="badge badge-navy" style="font-size: 0.85rem; font-weight: 800;">
                     {{ veh.slot_number }}
                   </span>
                 </td>
                 <td>
-                  <strong style="font-size: 0.95rem; letter-spacing: 0.02em;">{{ veh.vehicle_number }}</strong>
+                  <span class="license-plate-mini" style="font-size: 0.92rem; font-weight: 800;">
+                    {{ veh.vehicle_number }}
+                  </span>
                 </td>
                 <td>
-                  <span class="badge badge-info">{{ veh.category }}</span>
+                  <span class="badge badge-teal">{{ veh.category }}</span>
                 </td>
-                <td style="color: var(--text-muted); font-size: 0.82rem;">
+                <td style="color: var(--text-muted); font-size: 0.85rem;">
                   {{ veh.driver_contact or '—' }}
                 </td>
-                <td style="font-size: 0.82rem; color: var(--text-muted);">
+                <td style="font-size: 0.84rem; color: var(--text-muted);">
                   {{ veh.entry_time }}
                 </td>
                 <td>
-                  <span class="badge badge-purple" data-entry-time="{{ veh.entry_time }}">Calculating...</span>
+                  <span class="badge badge-blue" data-entry-time="{{ veh.entry_time }}">
+                    Calculating...
+                  </span>
                 </td>
-                <td>
-                  <code style="font-size: 0.75rem; background: #f1f5f9; padding: 0.2rem 0.4rem; border-radius: 4px; color: var(--primary);">
-                    dict[key] &rarr; O(1)
-                  </code>
+                <td style="font-size: 0.82rem; color: var(--text-muted);">
+                  Base {{ rate_info.base_fee|currency }} + {{ rate_info.hourly_rate|currency }}/hr
                 </td>
                 <td>
                   <button class="btn btn-danger btn-sm" onclick="openExitModal('{{ veh.vehicle_number }}', '{{ veh.slot_number }}', '{{ veh.category }}', '{{ veh.entry_time }}')">
-                    <span>Exit & Bill</span>
+                    <span>Exit &amp; Bill</span>
                   </button>
                 </td>
               </tr>
             {% endfor %}
           {% else %}
             <tr>
-              <td colspan="8" style="text-align: center; padding: 3rem; color: var(--text-muted);">
-                <div style="font-size: 2rem; margin-bottom: 0.5rem;">🅿️</div>
-                <h4 style="font-weight: 700; color: var(--text-main);">No active parked vehicles found</h4>
-                <p style="font-size: 0.85rem; margin-top: 0.25rem;">
+              <td colspan="8" style="text-align: center; padding: 3.5rem; color: var(--text-muted);">
+                <div style="font-size: 2.25rem; margin-bottom: 0.5rem;">🅿️</div>
+                <h4 style="font-weight: 700; color: var(--navy-primary); font-size: 1.1rem;">No Active Parked Vehicles</h4>
+                <p style="font-size: 0.88rem; margin-top: 0.35rem; color: var(--text-muted);">
                   {% if search_query %}
-                    No parked vehicle matched "{{ search_query }}". Try clearing your search.
+                    No parked vehicles matched your search "{{ search_query }}". Try clearing the filter.
                   {% else %}
-                    All parking slots are currently vacant. Use "Park New Vehicle" to allocate a slot.
+                    All parking slots are currently vacant. Click "Park New Vehicle" to allocate a slot.
                   {% endif %}
                 </p>
+                {% if not search_query %}
+                  <div style="margin-top: 1.25rem;">
+                    <button class="btn btn-primary btn-sm" onclick="openParkModal()">
+                      <span>➕ Park First Vehicle</span>
+                    </button>
+                  </div>
+                {% endif %}
               </td>
             </tr>
           {% endif %}
         </tbody>
       </table>
     </div>
+
   </div>
 </div>
 {% endblock %}

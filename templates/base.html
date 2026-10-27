@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ page_title }} — SmartPark DSA System</title>
+  <title>{{ page_title }} — SmartPark Management System</title>
   
   <!-- CSS Styles -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   
-  <!-- Chart.js CDN with graceful fallback -->
+  <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -20,73 +20,63 @@
         <div class="brand-icon">P</div>
         <div class="brand-info">
           <h1>SmartPark</h1>
-          <p>DSA Allocation System</p>
+          <p>Parking Management</p>
         </div>
       </div>
 
       <nav class="sidebar-nav">
-        <span class="nav-category">Main Navigation</span>
-        
+        <!-- 1. Dashboard -->
         <a href="{{ url_for('dashboard') }}" class="nav-item {{ 'active' if request.endpoint == 'dashboard' else '' }}">
           <div class="nav-link-content">
-            <span style="font-size: 1.1rem;">📊</span>
+            <span>📊</span>
             <span>Dashboard</span>
           </div>
         </a>
 
+        <!-- 2. Parking Map -->
         <a href="{{ url_for('parking_map') }}" class="nav-item {{ 'active' if request.endpoint == 'parking_map' else '' }}">
           <div class="nav-link-content">
-            <span style="font-size: 1.1rem;">🅿️</span>
+            <span>🅿️</span>
             <span>Parking Map</span>
           </div>
-          <span class="nav-badge badge-primary">{{ global_summary.total_slots }}</span>
+          <span class="nav-badge badge-teal">{{ global_summary.total_slots }}</span>
         </a>
 
+        <!-- 3. Active Vehicles -->
         <a href="{{ url_for('vehicles') }}" class="nav-item {{ 'active' if request.endpoint == 'vehicles' else '' }}">
           <div class="nav-link-content">
-            <span style="font-size: 1.1rem;">🚗</span>
+            <span>🚗</span>
             <span>Active Vehicles</span>
           </div>
-          <span class="nav-badge {{ 'badge-danger' if global_summary.occupied_slots > 0 else 'badge-primary' }}">
+          <span class="nav-badge {{ 'badge-amber' if global_summary.occupied_slots > 0 else 'badge-teal' }}">
             {{ global_summary.occupied_slots }}
           </span>
         </a>
 
-        <a href="{{ url_for('waiting_queue') }}" class="nav-item {{ 'active' if request.endpoint == 'waiting_queue' else '' }}">
+        <!-- 4. Waiting List -->
+        <a href="{{ url_for('waiting_list') }}" class="nav-item {{ 'active' if request.endpoint in ['waiting_list', 'waiting_queue'] else '' }}">
           <div class="nav-link-content">
-            <span style="font-size: 1.1rem;">⏳</span>
-            <span>FIFO Queue</span>
+            <span>⏳</span>
+            <span>Waiting List</span>
           </div>
           {% if global_summary.waiting_count > 0 %}
-            <span class="nav-badge badge-purple">{{ global_summary.waiting_count }}</span>
+            <span class="nav-badge badge-amber">{{ global_summary.waiting_count }}</span>
           {% endif %}
         </a>
 
+        <!-- 5. Parking History -->
         <a href="{{ url_for('history') }}" class="nav-item {{ 'active' if request.endpoint == 'history' else '' }}">
           <div class="nav-link-content">
-            <span style="font-size: 1.1rem;">📜</span>
+            <span>📜</span>
             <span>Parking History</span>
           </div>
-        </a>
-
-        <span class="nav-category" style="margin-top: 0.5rem;">Academic / Faculty</span>
-
-        <a href="{{ url_for('dsa_insights') }}" class="nav-item {{ 'active' if request.endpoint == 'dsa_insights' else '' }}">
-          <div class="nav-link-content">
-            <span style="font-size: 1.1rem;">🧠</span>
-            <span>DSA Insights & Viva</span>
-          </div>
-          <span class="nav-badge badge-purple">Viva</span>
         </a>
       </nav>
 
       <div class="sidebar-footer">
-        <div class="dsa-badge-pill">
-          <div class="pulse-indicator"></div>
-          <div>
-            <strong>Linear Search:</strong> O(N)<br>
-            <strong>Hash Lookup:</strong> O(1)
-          </div>
+        <div class="system-status-indicator">
+          <div class="status-dot-pulse"></div>
+          <span>System Online &bull; 30 Slots</span>
         </div>
       </div>
     </aside>
@@ -103,26 +93,13 @@
 
         <div class="topbar-right">
           <div class="live-clock-pill">
-            <span>⏱️</span>
+            <span>🕒</span>
             <span id="liveClock">{{ current_time_str }}</span>
           </div>
 
           <button class="btn btn-primary btn-sm" onclick="openParkModal()">
             <span>➕ Park Vehicle</span>
           </button>
-
-          <!-- Quick Faculty Demo Tools -->
-          <form action="{{ url_for('seed_sample_data') }}" method="POST" style="display: inline;">
-            <button type="submit" class="btn btn-secondary btn-sm" title="Seed realistic demo data for viva">
-              <span>⚡ Demo Data</span>
-            </button>
-          </form>
-
-          <form action="{{ url_for('reset_demo') }}" method="POST" style="display: inline;" onsubmit="return confirm('Reset all slots to default empty state?');">
-            <button type="submit" class="btn btn-secondary btn-sm" title="Reset parking system">
-              <span>🔄 Reset</span>
-            </button>
-          </form>
         </div>
       </header>
 
@@ -151,7 +128,7 @@
   </div>
 
   <!-- ========================================================================
-       MODAL 1: PARK VEHICLE (MODAL)
+       MODAL 1: PARK VEHICLE
        ======================================================================== -->
   <div id="parkVehicleModal" class="modal-backdrop">
     <div class="modal-content">
@@ -163,20 +140,22 @@
         <div class="modal-body">
           <input type="hidden" name="preferred_slot_id" id="preferredSlotId" value="">
           
-          <div id="selectedSlotDisplay" class="alert alert-info" style="display: none; margin-bottom: 1rem; font-size: 0.8rem;"></div>
+          <div id="selectedSlotDisplay" class="alert alert-info" style="display: none; margin-bottom: 1.25rem; font-size: 0.85rem;"></div>
 
           <div class="form-group">
-            <label class="form-label" for="vehicleNumber">Vehicle Number <span style="color: var(--danger);">*</span></label>
+            <label class="form-label" for="vehicleNumber">Vehicle Registration Number <span style="color: var(--status-occupied);">*</span></label>
             <input type="text" class="form-control" id="vehicleNumber" name="vehicle_number" placeholder="e.g. KA-01-AB-1234" required autofocus autocomplete="off">
-            <small style="font-size: 0.72rem; color: var(--text-muted);">Duplicate vehicles parked inside are automatically rejected via O(1) hashing.</small>
+            <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; display: block;">
+              Vehicle will be assigned the first eligible available slot automatically.
+            </small>
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="vehicleCategory">Vehicle Category <span style="color: var(--danger);">*</span></label>
+            <label class="form-label" for="vehicleCategory">Vehicle Category <span style="color: var(--status-occupied);">*</span></label>
             <select class="form-control" id="vehicleCategory" name="category" required>
               <option value="Four-Wheeler" selected>Four-Wheeler (Car / Sedan / SUV)</option>
               <option value="Two-Wheeler">Two-Wheeler (Motorcycle / Scooter)</option>
-              <option value="EV Charging">EV (Electric Vehicle with Charging)</option>
+              <option value="EV Charging">EV (Electric Vehicle Charging)</option>
               <option value="Reserved">VIP / Accessible / Priority</option>
             </select>
           </div>
@@ -184,10 +163,6 @@
           <div class="form-group">
             <label class="form-label" for="driverContact">Driver Contact (Optional)</label>
             <input type="text" class="form-control" id="driverContact" name="driver_contact" placeholder="e.g. 9876543210">
-          </div>
-
-          <div class="alert alert-warning" style="font-size: 0.78rem; padding: 0.6rem 0.8rem; margin-top: 0.5rem;">
-            <strong>DSA Allocation Logic:</strong> Scans slots using <em>Linear Search O(N)</em> for first eligible slot. If full, adds to <em>FIFO Queue O(1)</em>.
           </div>
         </div>
         <div class="modal-footer">
@@ -199,45 +174,42 @@
   </div>
 
   <!-- ========================================================================
-       MODAL 2: EXIT VEHICLE (MODAL)
+       MODAL 2: EXIT & BILLING
        ======================================================================== -->
   <div id="exitVehicleModal" class="modal-backdrop">
     <div class="modal-content">
       <div class="modal-header">
-        <h3 class="modal-title">🏁 Process Vehicle Exit</h3>
+        <h3 class="modal-title">🏁 Vehicle Exit &amp; Billing</h3>
         <button type="button" class="alert-close" data-close-modal="exitVehicleModal">&times;</button>
       </div>
       <form action="{{ url_for('exit_vehicle') }}" method="POST">
         <div class="modal-body">
-          <div class="alert alert-info" style="margin-bottom: 1rem;">
-            Vehicle to Exit: <strong id="exitVehDisplay">-</strong>
+          <div class="alert alert-info" style="margin-bottom: 1.25rem;">
+            Vehicle to Release: <strong id="exitVehDisplay" style="margin-left: 0.35rem;">-</strong>
           </div>
 
           <input type="hidden" name="vehicle_number" id="exitVehicleNumber" value="">
           
-          <div id="exitDetailsBox" style="margin-bottom: 1.25rem;"></div>
+          <!-- Live Calculated Bill Preview Box -->
+          <div id="exitBillPreviewBox" style="margin-bottom: 1.25rem;"></div>
 
           <div class="form-group">
-            <label class="form-label" for="simulatedMinutes">Simulate Parking Duration (Optional for Viva/Demo)</label>
+            <label class="form-label" for="simulatedMinutes">Duration Simulation (Optional)</label>
             <select class="form-control" name="simulated_minutes" id="simulatedMinutes">
-              <option value="">Calculate Real Elapsed Time</option>
-              <option value="30">30 Minutes (Short stay)</option>
-              <option value="60">1 Hour (Standard stay)</option>
-              <option value="120">2 Hours (Medium stay)</option>
-              <option value="240">4 Hours (Extended stay)</option>
+              <option value="" selected>Calculate Real Elapsed Duration</option>
+              <option value="30">30 Minutes Stay</option>
+              <option value="60">1 Hour Stay</option>
+              <option value="120">2 Hours Stay</option>
+              <option value="240">4 Hours Stay</option>
             </select>
-            <small style="font-size: 0.72rem; color: var(--text-muted);">
-              Use simulation to show faculty instant fee and duration calculation without waiting real hours!
+            <small style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.25rem; display: block;">
+              Select a duration to simulate extended stays or keep default for real elapsed time.
             </small>
-          </div>
-
-          <div class="alert alert-success" style="font-size: 0.78rem; padding: 0.6rem 0.8rem; margin-top: 0.5rem;">
-            <strong>FIFO Auto-Allocation:</strong> Upon exit, the newly freed slot is checked against waiting vehicles in <em>collections.deque</em>.
           </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-close-modal="exitVehicleModal">Cancel</button>
-          <button type="submit" class="btn btn-danger">Confirm Exit & Bill</button>
+          <button type="submit" class="btn btn-danger">Confirm and Bill</button>
         </div>
       </form>
     </div>
