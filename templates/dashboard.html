@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- SUMMARY KPI STAT CARDS -->
+<!-- SUMMARY KPI STAT CARDS (MIDNIGHT NAVY & TEAL) -->
 <div class="stats-grid">
   <!-- 1. Total Slots -->
   <div class="stat-card card-navy">
@@ -19,7 +19,7 @@
       <span class="stat-label">Available Slots</span>
       <div class="stat-icon">🟢</div>
     </div>
-    <div class="stat-value">{{ summary.available_slots }}</div>
+    <div class="stat-value" id="kpiAvailableSlots">{{ summary.available_slots }}</div>
     <div class="stat-subtext">Ready for immediate parking</div>
   </div>
 
@@ -29,7 +29,7 @@
       <span class="stat-label">Occupied Slots</span>
       <div class="stat-icon">🔴</div>
     </div>
-    <div class="stat-value">{{ summary.occupied_slots }}</div>
+    <div class="stat-value" id="kpiOccupiedSlots">{{ summary.occupied_slots }}</div>
     <div class="stat-subtext">Currently parked vehicles</div>
   </div>
 
@@ -39,7 +39,7 @@
       <span class="stat-label">Reserved Slots</span>
       <div class="stat-icon">🟡</div>
     </div>
-    <div class="stat-value">{{ summary.reserved_slots }}</div>
+    <div class="stat-value" id="kpiReservedSlots">{{ summary.reserved_slots }}</div>
     <div class="stat-subtext">VIP / Priority bays</div>
   </div>
 
@@ -49,7 +49,7 @@
       <span class="stat-label">Waiting List</span>
       <div class="stat-icon">⏳</div>
     </div>
-    <div class="stat-value">{{ summary.waiting_count }}</div>
+    <div class="stat-value" id="kpiWaitingList">{{ summary.waiting_count }}</div>
     <div class="stat-subtext">Vehicles queued for slots</div>
   </div>
 
@@ -104,7 +104,7 @@
 <!-- FOCUSED OVERVIEW & QUICK ENTRY -->
 <div class="dashboard-overview-grid">
   
-  <!-- QUICK VEHICLE ENTRY CARD -->
+  <!-- QUICK VEHICLE ENTRY CARD (STRICT VALIDATION) -->
   <div class="card" style="height: fit-content;">
     <div class="card-header">
       <div>
@@ -115,23 +115,55 @@
     <div class="card-body">
       <form action="{{ url_for('park_vehicle') }}" method="POST">
         <div class="form-group">
-          <label class="form-label" for="dashVehNum">Vehicle Registration Number</label>
-          <input type="text" class="form-control" id="dashVehNum" name="vehicle_number" placeholder="e.g. KA-01-AB-1234" required autocomplete="off">
+          <label class="form-label" for="dashVehNum">Vehicle Registration Number <span style="color: var(--status-occupied);">*</span></label>
+          <input 
+            type="text" 
+            class="form-control" 
+            id="dashVehNum" 
+            name="vehicle_number" 
+            placeholder="e.g. ABCD1234 or KA01AB1234" 
+            pattern="[A-Z0-9]{3,16}" 
+            minlength="3" 
+            maxlength="16" 
+            required 
+            autocomplete="off"
+            value="{{ entry_form_data.get('vehicle_number', '') }}"
+            oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')"
+          >
+          <small style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
+            Only uppercase letters (A–Z) and digits (0–9). No special characters.
+          </small>
         </div>
 
         <div class="form-group">
-          <label class="form-label" for="dashCategory">Vehicle Category</label>
+          <label class="form-label" for="dashContact">Driver Contact (10 Digits) <span style="color: var(--status-occupied);">*</span></label>
+          <input 
+            type="tel" 
+            class="form-control" 
+            id="dashContact" 
+            name="driver_contact" 
+            placeholder="e.g. 9876543210" 
+            pattern="[0-9]{10}" 
+            minlength="10" 
+            maxlength="10" 
+            required
+            autocomplete="off"
+            value="{{ entry_form_data.get('driver_contact', '') }}"
+            oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+          >
+          <small style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
+            Must be exactly 10 numeric digits.
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="dashCategory">Vehicle Category <span style="color: var(--status-occupied);">*</span></label>
           <select class="form-control" id="dashCategory" name="category" required>
-            <option value="Four-Wheeler" selected>Four-Wheeler (Car / Sedan / SUV)</option>
-            <option value="Two-Wheeler">Two-Wheeler (Motorcycle / Scooter)</option>
-            <option value="EV Charging">EV (Electric Vehicle Charging)</option>
-            <option value="Reserved">VIP / Accessible / Priority</option>
+            <option value="Four-Wheeler" {% if entry_form_data.get('category') == 'Four-Wheeler' or not entry_form_data.get('category') %}selected{% endif %}>Four-Wheeler (Car / Sedan / SUV)</option>
+            <option value="Two-Wheeler" {% if entry_form_data.get('category') == 'Two-Wheeler' %}selected{% endif %}>Two-Wheeler (Motorcycle / Scooter)</option>
+            <option value="EV Charging" {% if entry_form_data.get('category') == 'EV Charging' %}selected{% endif %}>EV (Electric Vehicle Charging Only)</option>
+            <option value="Reserved" {% if entry_form_data.get('category') == 'Reserved' %}selected{% endif %}>VIP / Accessible / Priority</option>
           </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="dashContact">Driver Contact (Optional)</label>
-          <input type="text" class="form-control" id="dashContact" name="driver_contact" placeholder="e.g. 9876543210">
         </div>
 
         <button type="submit" class="btn btn-primary" style="width: 100%;">
@@ -187,7 +219,7 @@
                     <div class="progress-bar-container" style="flex: 1; margin: 0;">
                       <div class="progress-bar-fill" style="width: {{ cat_pct }}%; background: {% if cat_pct > 80 %}var(--status-occupied){% elif cat_pct > 50 %}var(--status-reserved){% else %}var(--teal-primary){% endif %};"></div>
                     </div>
-                    <span style="font-size: 0.8rem; font-weight: 700; color: var(--navy-primary); width: 45px; text-align: right;">{{ cat_pct }}%</span>
+                    <span style="font-size: 0.8rem; font-weight: 700; color: #ffffff; width: 45px; text-align: right;">{{ cat_pct }}%</span>
                   </div>
                 </td>
               </tr>
@@ -197,7 +229,7 @@
       </div>
 
       <!-- Quick Action Navigation Footer -->
-      <div style="padding: 1.25rem 1.75rem; background: #f8fafc; border-top: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+      <div style="padding: 1.25rem 1.75rem; background: rgba(0, 0, 0, 0.15); border-top: 1px solid var(--border-card); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
         <span style="font-size: 0.84rem; color: var(--text-muted);">
           Looking for active sessions or queue status?
         </span>

@@ -1,76 +1,84 @@
 # SmartPark — Professional Parking Management System
-> Modern, elegant, and intelligent parking management web application built with Python, Flask, and SQLite.
+> Modern, elegant, and intelligent parking facility management web application built with Python, Flask, SQLite, and ReportLab.
 
 ---
 
 ## 🌟 Overview & Key Features
 
-**SmartPark** is a full-featured, responsive parking facility management web application designed for real-world parking operations. It manages **30 numbered parking bays** across dedicated vehicle categories, featuring real-time occupancy statistics, an interactive visual parking map, automated queue allocation, and an integrated billing & invoicing engine.
+**SmartPark** is an executive, responsive parking facility management web application designed for real-world parking operations. It manages **30 numbered parking bays** across dedicated vehicle categories, featuring real-time occupancy statistics, an interactive visual parking map, automated queue allocation, and an integrated ReportLab PDF invoice generation engine.
 
 ### Core Capabilities:
 - **📊 Real-Time Operations Dashboard**:
   - Live capacity KPI summary cards (Total, Available, Occupied, Reserved, Waiting List, Occupancy Rate).
-  - Responsive layout that adapts to all screen sizes without horizontal clipping.
+  - Responsive layout that fits all screen sizes without horizontal clipping or overflow.
   - Dynamic visual charts (Capacity Breakdown Doughnut Chart & Category Distribution Bar Chart powered by Chart.js).
   - Focused live facility overview table with utilization progress meters.
 - **🅿️ Interactive Parking Map**:
   - Visual grid of all 30 numbered slots (`S-01` to `S-30`).
-  - Clear color-coding: 🟢 **Green** (Available), 🔴 **Red** (Occupied), 🟡 **Yellow** (Reserved).
+  - Clear color-coding: 🟢 **Green** (Available), 🔴 **Red** (Occupied), 🟡 **Yellow** (Reserved), ⚡ **Teal** (EV Charging).
+  - In-place AJAX reservation toggling: reserve multiple slots while staying at the exact same scroll position.
   - Category filtering: Two-Wheeler, Four-Wheeler, EV Fast Charging, and Reserved/VIP.
-  - Direct 1-click slot actions (Quick Park, Reservation Toggle, and Exit & Bill).
-- **🚗 Active Vehicles Directory**:
-  - Real-time directory of all currently parked vehicles.
-  - Live duration counters ticking in real time.
-  - Rapid search by vehicle registration number, slot, or category.
-  - Instant access to the Vehicle Exit & Billing workflow.
-  - Receipt appears **strictly on this page** upon exit completion.
-- **⏳ Customer Waiting List**:
-  - Automatic waitlisting in FIFO order when parking slots for a category are fully occupied.
-  - Automatic slot dispatch: when an occupied vehicle exits, the system automatically allocates the freed slot to the first eligible vehicle in line.
-- **📜 Parking & Billing History**:
+- **🚗 Active Vehicles Directory & Instant PDF Invoicing**:
+  - Real-time directory of all currently parked vehicles with live stay duration tickers.
+  - Direct **Exit & Bill**: Clicking **Confirm and Bill** immediately generates and downloads the official PDF tax invoice receipt.
+  - No receipt popup, receipt preview, or intermediate buttons.
+  - Idempotent billing protection against double-clicks or retries.
+- **⏳ Customer Waiting List with Strict Compatibility**:
+  - Two-Wheeler slots assign only to Two-Wheelers.
+  - Four-Wheeler slots assign only to standard Four-Wheelers.
+  - EV Charging slots assign only to EV vehicles requiring charging (never fall back to Four-Wheeler slots).
+  - Strict FIFO order dispatch: newly freed slots are assigned only to eligible waiting vehicles for that exact category.
+  - Waiting time does not count toward active billing duration.
+- **📜 Parking History with Print Receipt & Safe Deletion**:
   - Complete history of past parking sessions with vehicle registration number, slot, entry/exit timestamps, total duration, and charges.
+  - **Print Receipt**: Download the original official PDF tax invoice using saved transaction details without altering billing.
+  - **Delete Record**: Safely delete individual history records with confirmation; active vehicles and slots remain completely isolated.
   - Instant search and sorting by Exit Time, Entry Time, Duration, Charges, or Vehicle Number.
-  - Printable report view.
-- **🧾 Dedicated Receipt Print View**:
-  - Official Parking Invoice Receipt generated upon vehicle exit.
-  - When clicking **"Print Receipt"**, prints **ONLY the receipt** on a single paper-friendly page, hiding sidebars, navigation, topbar, and tables.
-  - Dismissing the receipt closes it cleanly without deleting completed parking history.
+- **🛡️ Strict Input Validation**:
+  - **Vehicle Registration**: Accepts only uppercase English letters (`A–Z`) and digits (`0–9`). Rejects commas, dots, spaces, hyphens, and short inputs (e.g. `ABCD1234` accepted).
+  - **Driver Contact**: Accepts exactly 10 digits without letters, spaces, or symbols.
+  - Client-side and server-side validation with preserved form inputs on failure.
 
 ---
 
-## 🎨 Premium Theme & UI Design
-The application features a modern, executive light palette:
-- **Deep Navy Blue** (`#0f172a`, `#1e293b`) for structured contrast, sidebar elevation, and typography.
-- **Teal Accent** (`#0d9488`, `#14b8a6`, `#f0fdfa`) for active navigation, key action buttons, and highlights.
-- **Soft Blue & Slate** (`#0284c7`, `#38bdf8`, `#f8fafc`) for cards, progress bars, and informative badges.
-- **Status Accents**: Emerald Green for Available bays, Coral Red for Occupied bays, and Amber for Reserved/Waitlisted items.
+## 🎨 Theme & UI Design
+The application features an executive dark palette:
+- **Main Background**: Deep Midnight Navy (`#061A33`).
+- **Primary Highlights**: Vibrant Teal (`#00CBB0`).
+- **Complementary Accents**: Electric Sky Blue (`#0ea5e9`, `#38bdf8`) and Slate Navy (`#0c284d`, `#0a2547`).
+- **High-Contrast Status Indicators**:
+  - Available: Emerald Green (`#10b981`)
+  - Occupied: Coral Red (`#ef4444`)
+  - Reserved: Warm Amber (`#f59e0b`)
+  - EV Charging: Electric Teal (`#00CBB0`)
 
 ---
 
 ## 📁 Project Structure
 ```
 SmartPark/
-├── app.py                      # Flask routes, API endpoints, session management & billing controller
-├── parking_manager.py          # Core allocation, exit & billing engine, collections.deque queue
+├── app.py                      # Flask routes, API endpoints, PDF streaming & reservation controller
+├── parking_manager.py          # Core allocation engine, strict compatibility, FIFO deque, idempotency
+├── pdf_generator.py            # ReportLab PDF invoice generation engine (A5 branded receipts)
 ├── database.py                 # SQLite initialization, connections & persistence helpers
 ├── schema.sql                  # Database schema definition with tables and indexes
-├── requirements.txt            # Python dependencies (Flask)
+├── requirements.txt            # Python dependencies (Flask, ReportLab)
 ├── README.md                   # Full documentation & run guide
 ├── static/
 │   ├── css/
-│   │   └── style.css           # Premium UI styling + dedicated @media print layout
+│   │   └── style.css           # Premium Midnight Navy & Teal theme styling
 │   └── js/
-│       └── script.js           # Live tickers, Chart.js integrations, bill calculation & modal controls
+│       └── script.js           # AJAX reservation, PDF blob downloads, input masks & charts
 ├── templates/
-│   ├── base.html               # Shared layout with 5-section sidebar and topbar
-│   ├── dashboard.html          # Responsive KPI cards, capacity charts, and live category overview
-│   ├── parking_map.html        # 30-slot visual parking grid with real-time status
-│   ├── vehicles.html           # Active vehicles directory with dedicated printable receipt area
-│   ├── waiting_list.html       # Customer waiting list with FIFO queue flow
-│   └── history.html            # Searchable and sortable completed parking sessions
+│   ├── base.html               # Shared layout, floating toasts, entry & exit modals
+│   ├── dashboard.html          # Responsive KPI cards, capacity charts, and quick entry form
+│   ├── parking_map.html        # 30-slot visual parking grid with in-place reservation
+│   ├── vehicles.html           # Active vehicles directory with instant exit action
+│   ├── waiting_list.html       # Customer waiting list with strict FIFO dispatch
+│   └── history.html            # Searchable history with Print Receipt & Delete buttons
 └── tests/
-    ├── test_parking_manager.py # Unit tests for allocation, exit, defensive billing & persistence
-    └── test_app.py             # Integration tests for routes, receipt scoping, and dashboard sizing
+    ├── test_parking_manager.py # 14 Unit tests for DSA, validation, compatibility, and idempotency
+    └── test_app.py             # 10 Integration tests for routes, PDF downloads, and AJAX
 ```
 
 ---
@@ -105,11 +113,11 @@ python -m pip install -r requirements.txt
 ```
 
 ### Step 3: Run the Automated Tests
-Run the test suite (20 unit and integration tests):
+Run the complete test suite (24 unit and integration tests):
 ```powershell
 python -m unittest discover tests -v
 ```
-*(All 20 tests will pass cleanly).*
+*(All 24 tests will pass cleanly).*
 
 ### Step 4: Start the Web Server
 ```powershell
@@ -123,34 +131,43 @@ Navigate to:
 
 ---
 
-## 🔍 Verification Steps for Recent Fixes
+## 🔍 Verification Guide for the 6 Changes
 
-### 1. Print Only the Parking Receipt
+### 1. Active Vehicles — Exit & Bill (Immediate PDF Download)
 1. Open `http://127.0.0.1:5000/vehicles`.
-2. Click **"➕ Park New Vehicle"** and park a car (e.g. `KA-01-TEST`).
-3. Click **"Exit & Bill"** for that car and click **"Confirm and Bill"**.
-4. The parking receipt appears on top of the Active Vehicles page.
-5. Click **"🖨️ Print Receipt"**.
-6. In the browser's print preview dialog:
-   - Notice that **ONLY the receipt** is displayed.
-   - The sidebar, top navigation, search bar, active vehicles table, and buttons are hidden.
-   - The receipt is centered and fits on a single clean page.
-7. Cancel or close the print preview: the website layout on the screen remains completely unchanged.
+2. Click **"➕ Park New Vehicle"** and park a vehicle (e.g. `ABCD1234`, Contact `9876543210`).
+3. Click **"Exit & Bill"** on that vehicle, then click **"Confirm and Bill (Download PDF)"**.
+4. The official PDF receipt (`SmartPark_Receipt_ABCD1234.pdf`) downloads automatically.
+5. Notice that no receipt popup or preview appears on the screen, and the vehicle is removed from the active table.
 
-### 2. Receipt Scoped Only to Active Vehicles Page
-1. With the receipt visible on `/vehicles`:
-2. Click **Dashboard** in the sidebar. Notice the dashboard displays its normal content immediately with **no receipt card**.
-3. Click **Parking Map** &rarr; normal map content only.
-4. Click **Waiting List** &rarr; normal waitlist content only.
-5. Click **Parking History** &rarr; normal completed sessions table only.
-6. Click **Active Vehicles** again &rarr; the old receipt does not linger or reappear.
-7. Park another car and exit it &rarr; on the receipt, click **"Dismiss"** &rarr; the receipt closes immediately without deleting history or payment records.
+### 2. Parking History — Print Receipt & Delete
+1. Open `http://127.0.0.1:5000/history`.
+2. Find the completed record for `ABCD1234`.
+3. Click **"🖨️ Print Receipt"**: it immediately downloads the original PDF receipt without altering the bill amount.
+4. Click **"🗑️ Delete"**: confirm the prompt. The record is deleted; active vehicles and slots remain completely unaffected.
 
-### 3. Dashboard Responsiveness & No Horizontal Overflow
-1. Open `http://127.0.0.1:5000/dashboard`.
-2. Notice that all 6 KPI cards (including the 6th card **Occupancy Rate**) are completely visible.
-3. There is **no horizontal scrollbar** at standard desktop sizes (1280px, 1366px, 1920px).
-4. Resize your browser window to a narrower width (tablet or mobile):
-   - The summary cards wrap into 3 or 2 columns smoothly.
-   - The charts resize responsively.
-   - The quick vehicle entry and live category overview stack cleanly without horizontal clipping.
+### 3. Midnight Navy & Teal Redesign
+1. Browse **Dashboard**, **Parking Map**, **Active Vehicles**, **Waiting List**, and **Parking History**.
+2. Notice the deep Midnight Navy (`#061A33`) background, vibrant Teal (`#00CBB0`) highlights, and sharp status glows.
+3. Verify there is no horizontal scrollbar or clipped cards across any desktop or mobile viewport.
+
+### 4. Strict Input Validation
+1. In the vehicle entry form, attempt to enter:
+   - `KA,01` or `KA-01` or `...`: rejected with error explaining allowed characters.
+   - Contact `12345`: rejected with error requiring exactly 10 digits.
+2. Enter `ABCD1234` and `9876543210`: accepted and allocated cleanly.
+
+### 5. Strict Slot & Waiting List Compatibility
+1. Park 4 EV vehicles to fill slots S-23 to S-26.
+2. Enter a 5th EV vehicle: it will be queued to the Waiting List even if Four-Wheeler slots (S-07 to S-22) are vacant.
+3. Exit a Four-Wheeler: the freed Four-Wheeler slot will NOT be given to the waiting EV.
+4. Exit an EV: the freed EV slot is immediately allocated to the waiting EV in FIFO order.
+
+### 6. Stay in Position & Update in Place (Reservation)
+1. Open `http://127.0.0.1:5000/map`.
+2. Scroll down to Zone E (Slots S-27 to S-30).
+3. Click **"Reserve"** on an available slot:
+   - Notice the page stays in the exact same scroll position with no jumping.
+   - The slot updates in place to "RESERVED" with a lock icon.
+   - A floating toast confirms the reservation.
+   - You can reserve another slot immediately without scrolling.

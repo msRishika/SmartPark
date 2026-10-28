@@ -1,19 +1,26 @@
 """
 app.py
 Flask Application for SmartPark - Professional Parking Management System.
-Connects the web frontend with the SQLite database and ParkingManager engine.
+Connects web frontend with SQLite database, ParkingManager DSA engine,
+and ReportLab PDF invoice generation.
 """
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, send_file
 import os
 import math
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from database import init_db, DEFAULT_DB_PATH
-from parking_manager import ParkingManager, CATEGORY_RATES
+from parking_manager import (
+    ParkingManager,
+    CATEGORY_RATES,
+    validate_vehicle_registration,
+    validate_driver_contact_number
+)
+from pdf_generator import generate_receipt_pdf
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "smartpark-professional-secret-key-2026")
+app.secret_key = os.environ.get("SECRET_KEY", "smartpark-midnight-teal-secret-key-2026")
 
 # Initialize SQLite database if it doesn't exist
 init_db(DEFAULT_DB_PATH)
@@ -55,10 +62,12 @@ def duration_filter(minutes):
 
 @app.context_processor
 def inject_global_data():
-    """Injects live counts and current timestamp into all templates."""
+    """Injects live counts, current timestamp, and preserved form data into all templates."""
     summary = pm.get_dashboard_summary()
+    entry_data = session.get("entry_form_data", {})
     return {
         "global_summary": summary,
+        "entry_form_data": entry_data,
         "current_year": datetime.now().year,
         "current_time_str": datetime.now().strftime("%A, %d %b %Y | %I:%M %p")
     }
@@ -74,10 +83,7 @@ def dashboard():
     """
     Main dashboard with KPI summary cards, occupancy statistics,
     and a focused real-time overview.
-    Does not duplicate full waiting list or complete history tables here.
     """
-    session.pop("active_receipt", None)
-    session.pop("active_receipt_queue", None)
     summary = pm.get_dashboard_summary()
     return render_template(
         "dashboard.html",
@@ -89,8 +95,6 @@ def dashboard():
 @app.route("/map")
 def parking_map():
     """Visual parking map displaying all 30 slots with real-time status and category filtering."""
-    session.pop("active_receipt", None)
-    session.pop("active_receipt_queue", None)
     category_filter = request.args.get("category", "All")
     status_filter = request.args.get("status", "All")
 
@@ -128,17 +132,12 @@ def vehicles():
                 if query in v["vehicle_number"] or query in v["slot_number"] or query in v["category"].upper()
             ]
 
-    receipt = session.get("active_receipt")
-    receipt_queue = session.get("active_receipt_queue")
-
     return render_template(
         "vehicles.html",
         active_vehicles=active_list,
         total_active=len(pm.active_vehicles),
         search_query=query,
         rates=CATEGORY_RATES,
-        receipt=receipt,
-        receipt_queue=receipt_queue,
         page_title="Active Vehicles"
     )
 
@@ -146,9 +145,7 @@ def vehicles():
 @app.route("/waiting-list")
 @app.route("/queue")
 def waiting_list():
-    """Waiting list view displaying queued vehicles waiting for an available slot."""
-    session.pop("active_receipt", None)
-    session.pop("active_receipt_queue", None)
+    """Waiting list view displaying queued vehicles waiting for an available compatible slot."""
     queue_items = list(pm.waiting_queue)
     return render_template(
         "waiting_list.html",
@@ -164,14 +161,11 @@ waiting_queue = waiting_list
 
 @app.route("/history")
 def history():
-    """Completed parking history with duration, charges, and search/sorting options."""
-    session.pop("active_receipt", None)
-    session.pop("active_receipt_queue", None)
+    """Completed parking history with duration, charges, search, reprint, and delete actions."""
     search_query = request.args.get("q", "").strip()
     sort_by = request.args.get("sort_by", "exit_time")
     order = request.args.get("order", "desc")
 
-    # Uses the internal DSA sorting engine transparently
     records = pm.get_parking_history(
         search_query=search_query,
         sort_by=sort_by,
@@ -190,15 +184,20 @@ def history():
 
 
 # =============================================================================
-# ACTION CONTROLLERS (PARK, EXIT & BILLING, QUEUE, RESERVATIONS)
+# ACTION CONTROLLERS (PARK, EXIT & PDF DOWNLOAD, QUEUE, RESERVATIONS)
 # =============================================================================
 
 @app.route("/park", methods=["POST"])
 def park_vehicle():
-    """Handles vehicle entry submission and automatic slot assignment."""
-    vehicle_number = request.form.get("vehicle_number", "").strip().upper()
+    """
+    Handles vehicle entry submission with strict input validation (Requirement 4):
+    - Vehicle registration: uppercase letters A-Z and digits 0-9 only (no spaces/commas/symbols).
+    - Driver contact: exactly 10 digits.
+    - Preserves entered values on validation failure.
+    """
+    raw_vehicle = request.form.get("vehicle_number", "")
+    raw_contact = request.form.get("driver_contact", "")
     category = request.form.get("category", "Four-Wheeler").strip()
-    driver_contact = request.form.get("driver_contact", "").strip()
     preferred_slot_id = request.form.get("preferred_slot_id")
 
     if preferred_slot_id:
@@ -207,24 +206,52 @@ def park_vehicle():
         except (ValueError, TypeError):
             preferred_slot_id = None
 
-    if not vehicle_number:
-        flash("Please enter a valid vehicle registration number.", "danger")
+    # Strict vehicle registration validation
+    is_valid_veh, veh_res = validate_vehicle_registration(raw_vehicle)
+    if not is_valid_veh:
+        flash(veh_res, "danger")
+        session["entry_form_data"] = {
+            "vehicle_number": raw_vehicle,
+            "driver_contact": raw_contact,
+            "category": category
+        }
         return redirect(request.referrer or url_for("dashboard"))
 
+    # Strict driver contact validation
+    is_valid_contact, contact_res = validate_driver_contact_number(raw_contact)
+    if not is_valid_contact:
+        flash(contact_res, "danger")
+        session["entry_form_data"] = {
+            "vehicle_number": raw_vehicle,
+            "driver_contact": raw_contact,
+            "category": category
+        }
+        return redirect(request.referrer or url_for("dashboard"))
+
+    # Input is strictly valid: allocate slot or queue
     result = pm.park_vehicle(
-        vehicle_number=vehicle_number,
+        vehicle_number=veh_res,
         category=category,
-        driver_contact=driver_contact,
-        preferred_slot_id=preferred_slot_id
+        driver_contact=contact_res,
+        preferred_slot_id=preferred_slot_id,
+        strict_validation=True
     )
 
     if result["success"]:
+        session.pop("entry_form_data", None)
         if result.get("status") == "allocated":
-            flash(f"Slot {result['slot_number']} ({result['category']}) has been assigned to vehicle {vehicle_number}.", "success")
+            flash(f"Slot {result['slot_number']} ({result['category']}) successfully assigned to vehicle {veh_res}.", "success")
+            return redirect(url_for("vehicles"))
         elif result.get("status") == "queued":
-            flash(f"All slots for {category} are full. Vehicle {vehicle_number} has been added to the Waiting List at Position #{result['queue_position']}.", "warning")
+            flash(f"All compatible {category} slots are full/reserved. Vehicle {veh_res} added to Waiting List at Position #{result['queue_position']}.", "warning")
+            return redirect(url_for("waiting_list"))
     else:
         flash(result["message"], "danger")
+        session["entry_form_data"] = {
+            "vehicle_number": raw_vehicle,
+            "driver_contact": raw_contact,
+            "category": category
+        }
 
     return redirect(request.referrer or url_for("dashboard"))
 
@@ -232,13 +259,15 @@ def park_vehicle():
 @app.route("/exit", methods=["POST"])
 def exit_vehicle():
     """
-    Handles vehicle release, calculates parking fees accurately,
-    saves the bill to session for display, and allocates freed slots to waiting vehicles.
+    Handles vehicle release (Requirement 1):
+    1. Idempotently processes exit and saves bill to parking_history.
+    2. Generates and immediately downloads receipt as a PDF.
+    3. Dispatches next strictly compatible waiting vehicle in FIFO order.
+    4. No receipt popup or intermediate buttons shown.
     """
     vehicle_number = request.form.get("vehicle_number", "").strip().upper()
     simulated_minutes_raw = request.form.get("simulated_minutes")
 
-    # Safe parsing of optional simulated duration: avoids TypeError on empty string or invalid inputs
     simulated_minutes = None
     if simulated_minutes_raw is not None and str(simulated_minutes_raw).strip() != "":
         try:
@@ -249,37 +278,67 @@ def exit_vehicle():
             simulated_minutes = None
 
     if not vehicle_number:
-        flash("Please specify a valid vehicle number to process exit.", "danger")
+        flash("Please specify a valid vehicle registration number to process exit.", "danger")
         return redirect(request.referrer or url_for("vehicles"))
 
+    # Idempotent exit & billing
     result = pm.exit_vehicle(vehicle_number=vehicle_number, simulated_minutes=simulated_minutes)
 
-    if result["success"]:
-        summary = result["summary"]
-        session["active_receipt"] = summary
-        session["active_receipt_queue"] = result.get("queue_allocation")
-
-        fee_val = float(summary.get("fee", 0.0))
-        msg = f"Vehicle {vehicle_number} successfully exited from Slot {summary['slot_number']}. Total Fee: Rs. {fee_val:.2f}"
-        flash(msg, "success")
-
-        # Notify if a waiting vehicle was automatically allocated the freed slot
-        if result.get("queue_allocation"):
-            q_alloc = result["queue_allocation"]
-            flash(f"Slot {q_alloc['slot_number']} was immediately assigned to waiting vehicle {q_alloc['vehicle_number']} from the Waiting List.", "info")
-    else:
+    if not result["success"]:
         flash(result["message"], "danger")
+        return redirect(request.referrer or url_for("vehicles"))
 
-    return redirect(url_for("vehicles"))
+    summary = result["summary"]
+    pdf_buffer = generate_receipt_pdf(summary)
+    download_filename = f"SmartPark_Receipt_{summary['vehicle_number']}.pdf"
+
+    response = send_file(
+        pdf_buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=download_filename
+    )
+    response.headers["X-Vehicle-Exited"] = "true"
+    response.headers["X-Vehicle-Number"] = summary["vehicle_number"]
+    response.headers["X-Message"] = result.get("message", "Vehicle exited successfully.")
+    return response
 
 
-@app.route("/clear-bill", methods=["POST", "GET"])
-def clear_bill():
-    """Clears the displayed billing receipt from session."""
-    session.pop("active_receipt", None)
-    session.pop("active_receipt_queue", None)
-    session.pop("last_bill", None)
-    return redirect(url_for("vehicles"))
+@app.route("/receipt/<int:record_id>")
+@app.route("/history/receipt/<int:record_id>")
+def download_receipt(record_id):
+    """
+    Downloads the original PDF receipt using saved billing details (Requirement 2).
+    Read-only operation that does not recalculate or alter original bill.
+    """
+    record = pm.get_history_record_by_id(record_id)
+    if not record:
+        flash(f"Parking receipt record #{record_id} not found.", "danger")
+        return redirect(url_for("history"))
+
+    pdf_buffer = generate_receipt_pdf(record)
+    download_filename = f"SmartPark_Receipt_{record['vehicle_number']}_INV{record['id']:05d}.pdf"
+
+    return send_file(
+        pdf_buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=download_filename
+    )
+
+
+@app.route("/history/delete/<int:record_id>", methods=["POST"])
+def delete_history(record_id):
+    """
+    Deletes only the selected parking history record (Requirement 2).
+    Never deletes active vehicles or unrelated database records.
+    """
+    res = pm.delete_parking_record(record_id)
+    if res["success"]:
+        flash(res["message"], "success")
+    else:
+        flash(res["message"], "danger")
+    return redirect(url_for("history"))
 
 
 @app.route("/queue/remove", methods=["POST"])
@@ -296,13 +355,28 @@ def remove_from_queue():
 
 @app.route("/slot/toggle-reserve/<int:slot_id>", methods=["POST"])
 def toggle_reserve(slot_id):
-    """Toggles slot reservation status."""
+    """
+    Toggles slot reservation status (Requirement 6):
+    Supports in-place JSON response for AJAX updates (stay in position without jumping),
+    with standard redirect fallback for non-JS requests.
+    """
     result = pm.toggle_slot_reservation(slot_id)
+
+    is_ajax = (
+        request.headers.get("Accept") == "application/json"
+        or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or request.is_json
+    )
+
+    if is_ajax:
+        status_code = 200 if result["success"] else 400
+        return jsonify(result), status_code
+
     if result["success"]:
         flash(result["message"], "success")
         if result.get("queue_allocation"):
             q_alloc = result["queue_allocation"]
-            flash(f"Waiting vehicle {q_alloc['vehicle_number']} was assigned unreserved Slot {q_alloc['slot_number']}.", "info")
+            flash(f"Waiting vehicle {q_alloc['vehicle_number']} was automatically assigned freed Slot {q_alloc['slot_number']}.", "info")
     else:
         flash(result["message"], "danger")
 
@@ -325,7 +399,6 @@ def api_preview_bill(vehicle_number):
     category = session_info.get("category", "Four-Wheeler")
     slot_num = session_info.get("slot_number", "")
 
-    # Calculate real elapsed time
     entry_dt = datetime.now()
     if entry_time_str:
         try:
@@ -398,6 +471,12 @@ def api_slots():
 @app.route("/dsa-insights")
 def dsa_insights():
     return redirect(url_for("dashboard"))
+
+
+# Route kept for backward compatibility if directly visited
+@app.route("/clear-bill", methods=["POST", "GET"])
+def clear_bill():
+    return redirect(url_for("vehicles"))
 
 
 if __name__ == "__main__":

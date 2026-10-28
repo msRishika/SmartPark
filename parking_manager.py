@@ -5,14 +5,14 @@ Core Data Structures and Algorithms (DSA) Engine for SmartPark.
 Implements:
 1. Hashing: Python dictionary (`dict`) for O(1) active vehicle lookup and duplicate checking.
 2. Searching: Linear Search O(N) for first eligible available parking slot allocation.
-3. Queue: Python `collections.deque` for true O(1) FIFO waiting queue management.
+3. Queue: Python `collections.deque` for true O(1) FIFO waiting queue management with strict category compatibility.
 4. Sorting: Custom Merge Sort and Quick Sort algorithms (O(N log N)) for parking history.
 """
 
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime
 import math
-import copy
+import re
 from database import get_db_connection
 
 # Hourly parking rates by vehicle category
@@ -22,6 +22,47 @@ CATEGORY_RATES = {
     "EV Charging": {"base_fee": 25.0, "hourly_rate": 40.0},
     "Reserved": {"base_fee": 30.0, "hourly_rate": 50.0}
 }
+
+
+def validate_vehicle_registration(vehicle_number: str) -> tuple[bool, str]:
+    """
+    Validates vehicle registration number strictly (Requirement 4):
+    - Accepts only uppercase English letters (A-Z) and digits (0-9).
+    - Rejects commas, dots, spaces, hyphens, punctuation, and all special characters.
+    - Rejects meaningless or excessively short inputs (length < 3) such as ',,,', '...', or 'A'.
+    - Accepts reasonable registration-like values such as 'ABCD1234'.
+    Returns (is_valid, sanitized_string_or_error_message).
+    """
+    if not vehicle_number or not isinstance(vehicle_number, str):
+        return False, "Vehicle registration number cannot be empty."
+
+    raw = vehicle_number.strip()
+    if len(raw) < 3 or len(raw) > 16:
+        return False, "Vehicle registration number must be between 3 and 16 characters long."
+
+    # Must contain only uppercase A-Z and 0-9
+    if not re.fullmatch(r'^[A-Z0-9]+$', raw):
+        return False, "Vehicle registration must contain only uppercase English letters (A–Z) and digits (0–9), with no commas, dots, spaces, or special characters."
+
+    return True, raw
+
+
+def validate_driver_contact_number(driver_contact: str) -> tuple[bool, str]:
+    """
+    Validates driver contact number strictly (Requirement 4):
+    - Accepts exactly 10 digits.
+    - Rejects letters, spaces, punctuation, and numbers with fewer or more than 10 digits.
+    Returns (is_valid, sanitized_string_or_error_message).
+    """
+    if not driver_contact or not isinstance(driver_contact, str):
+        return False, "Driver contact number must be provided and must contain exactly 10 digits."
+
+    raw = driver_contact.strip()
+    if not re.fullmatch(r'^\d{10}$', raw):
+        return False, "Driver contact number must be exactly 10 numeric digits without letters, spaces, or punctuation (e.g. 9876543210)."
+
+    return True, raw
+
 
 class Slot:
     """Represents a physical parking slot."""
@@ -38,19 +79,13 @@ class Slot:
 
     def is_eligible_for(self, vehicle_category: str) -> bool:
         """
-        Check if this slot can accommodate the given vehicle category.
-        - Two-Wheeler -> Two-Wheeler slots only
-        - Four-Wheeler -> Four-Wheeler slots
-        - EV Charging -> EV Charging slots (or Four-Wheeler fallback)
-        - Reserved -> Reserved slots (or Four-Wheeler)
+        Check if this slot strictly accommodates the given vehicle category (Requirement 5):
+        - Two-Wheeler: assign only to compatible Two-Wheeler slot.
+        - Four-Wheeler: assign only to compatible standard Four-Wheeler slot.
+        - EV requiring charging: assign only to designated EV Charging slot (NEVER fallback to Four-Wheeler).
+        - Reserved: assign only to designated Reserved / VIP slot.
         """
-        if self.category == vehicle_category:
-            return True
-        if vehicle_category == "EV Charging" and self.category == "Four-Wheeler":
-            return True
-        if vehicle_category == "Reserved" and self.category == "Four-Wheeler":
-            return True
-        return False
+        return self.category == vehicle_category
 
     def to_dict(self):
         return {
@@ -66,7 +101,7 @@ class Slot:
 class ParkingManager:
     """
     Central Manager managing 30 parking slots, active parked vehicles,
-    FIFO waiting queue, and parking history.
+    FIFO waiting queue with strict compatibility, and parking history.
     """
     def __init__(self, db_path=None):
         self.db_path = db_path
@@ -155,12 +190,13 @@ class ParkingManager:
         """
         ALGORITHM: Linear Search
         TIME COMPLEXITY:
-            - Best Case: O(1) (First checked slot is free and eligible)
+            - Best Case: O(1) (First checked slot is free and strictly eligible)
             - Worst Case: O(N) (Iterates through all N slots)
             - Average Case: O(N/2) ~ O(N)
         SPACE COMPLEXITY: O(1) Auxiliary space
         
         Scans slots sequentially to find the first eligible slot with status == 'available'.
+        Enforces strict category matching (no fallback).
         """
         probes = 0
         for slot in self.slots:
@@ -185,21 +221,38 @@ class ParkingManager:
     # =========================================================================
     # VEHICLE ENTRY & ALLOCATION
     # =========================================================================
-    def park_vehicle(self, vehicle_number: str, category: str, driver_contact: str = "", preferred_slot_id: int = None):
+    def park_vehicle(self, vehicle_number: str, category: str, driver_contact: str = "", preferred_slot_id: int = None, strict_validation: bool = True):
         """
         Attempts to park a vehicle:
-        1. Check Duplicate via HASHING: O(1) active_vehicles lookup
-        2. Check if already waiting in FIFO Queue: O(M)
-        3. Search for slot using LINEAR SEARCH: O(N)
-        4. If slot found:
+        1. Strict Input Validation (Requirement 4)
+        2. Duplicate Check via HASHING: O(1) active_vehicles lookup
+        3. Duplicate Check in FIFO Waiting Queue: O(M)
+        4. Slot Selection using LINEAR SEARCH: O(N) with strict compatibility
+        5. If eligible slot found:
            - Update slot status to 'occupied'
            - Add to active_vehicles dictionary: O(1)
            - Persist to SQLite
-        5. If no slot found (Parking Full for category):
-           - Enqueue into collections.deque: O(1)
+        6. If no eligible slot found (Category full/unavailable):
+           - Enqueue into collections.deque: O(1) in FIFO order
            - Persist to waiting_queue table
         """
-        normalized_num = vehicle_number.strip().upper()
+        # Strict validation
+        if strict_validation:
+            is_valid_veh, veh_res = validate_vehicle_registration(vehicle_number)
+            if not is_valid_veh:
+                return {"success": False, "message": veh_res}
+            normalized_num = veh_res
+
+            clean_contact = ""
+            if driver_contact and str(driver_contact).strip() != "":
+                is_valid_contact, contact_res = validate_driver_contact_number(driver_contact)
+                if not is_valid_contact:
+                    return {"success": False, "message": contact_res}
+                clean_contact = contact_res
+        else:
+            normalized_num = vehicle_number.strip().upper()
+            clean_contact = str(driver_contact or "").strip()
+
         if not normalized_num:
             return {"success": False, "message": "Vehicle number cannot be empty."}
 
@@ -211,15 +264,15 @@ class ParkingManager:
                 "message": f"Duplicate vehicle! Vehicle {normalized_num} is already parked in Slot {active_info['slot_number']}."
             }
 
-        # 2. Check if already waiting in queue
+        # 2. Check if already waiting in FIFO queue
         for item in self.waiting_queue:
             if item["vehicle_number"] == normalized_num:
                 return {
                     "success": False,
-                    "message": f"Vehicle {normalized_num} is already waiting in queue at Position #{item['queue_position']}."
+                    "message": f"Duplicate entry! Vehicle {normalized_num} is already waiting in queue at Position #{item['queue_position']}."
                 }
 
-        # 3. Slot Selection: Preferred or Linear Search
+        # 3. Slot Selection: Preferred Slot (if strictly eligible) or Linear Search
         target_slot = None
         if preferred_slot_id:
             for slot in self.slots:
@@ -228,7 +281,7 @@ class ParkingManager:
                     break
 
         if not target_slot:
-            # Linear Search for the first eligible available slot
+            # Linear Search for the first eligible available slot with strict category compatibility
             target_slot = self.find_first_available_slot(category)
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -249,7 +302,7 @@ class ParkingManager:
                 cursor.execute("""
                     INSERT INTO active_sessions (vehicle_number, category, slot_id, slot_number, driver_contact, entry_time)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (normalized_num, category, target_slot.id, target_slot.slot_number, driver_contact, now_str))
+                """, (normalized_num, category, target_slot.id, target_slot.slot_number, clean_contact, now_str))
 
                 conn.commit()
 
@@ -264,7 +317,7 @@ class ParkingManager:
                     "category": category,
                     "slot_id": target_slot.id,
                     "slot_number": target_slot.slot_number,
-                    "driver_contact": driver_contact,
+                    "driver_contact": clean_contact,
                     "entry_time": now_str
                 }
 
@@ -287,7 +340,7 @@ class ParkingManager:
         queue_item = {
             "vehicle_number": normalized_num,
             "category": category,
-            "driver_contact": driver_contact,
+            "driver_contact": clean_contact,
             "queue_position": queue_pos,
             "created_at": now_str
         }
@@ -298,7 +351,7 @@ class ParkingManager:
             cursor.execute("""
                 INSERT INTO waiting_queue (vehicle_number, category, driver_contact, queue_position, created_at)
                 VALUES (?, ?, ?, ?, ?)
-            """, (normalized_num, category, driver_contact, queue_pos, now_str))
+            """, (normalized_num, category, clean_contact, queue_pos, now_str))
             conn.commit()
 
             # QUEUE ENQUEUE: collections.deque.append() O(1)
@@ -308,7 +361,7 @@ class ParkingManager:
                 "success": True,
                 "status": "queued",
                 "queue_position": queue_pos,
-                "message": f"All eligible slots are full. Vehicle {normalized_num} added to Waiting List at Position #{queue_pos}."
+                "message": f"All eligible {category} slots are currently occupied or reserved. Vehicle {normalized_num} added to Waiting List at Position #{queue_pos}."
             }
         except Exception as e:
             conn.rollback()
@@ -317,24 +370,59 @@ class ParkingManager:
             conn.close()
 
     # =========================================================================
-    # VEHICLE EXIT & AUTO FIFO QUEUE DISPATCH
+    # VEHICLE EXIT & AUTO FIFO QUEUE DISPATCH (IDEMPOTENT BILLING)
     # =========================================================================
     def exit_vehicle(self, vehicle_number: str, simulated_minutes = None):
         """
-        Releases a vehicle from parking:
+        Releases a vehicle from parking (Requirement 1):
         1. HASH MAP LOOKUP: O(1) check active_vehicles
-        2. Calculate duration and billing fee using established rates
-        3. Archive session to parking_history table
-        4. Free the slot (mark available, remove vehicle)
-        5. Remove from active_vehicles hash map: O(1)
-        6. FIFO QUEUE DISPATCH:
-           - Scan waiting_queue (FIFO order) for the first vehicle eligible for this freed slot.
-           - If found, DEQUEUES via popleft() / indexed extraction and allocates the slot immediately!
+        2. Idempotency Check: if already exited, returns original saved bill
+        3. Calculate duration and billing fee using established rates
+        4. Archive session to parking_history table persistently
+        5. Free the slot (mark available, remove vehicle)
+        6. Remove from active_vehicles hash map: O(1)
+        7. FIFO QUEUE DISPATCH with strict category compatibility:
+           - Dispatches slot only to the first waiting vehicle strictly eligible for slot.category.
+           - Waiting time is not active time; entry_time is set to dispatch timestamp.
         """
         normalized_num = vehicle_number.strip().upper()
 
-        # 1. O(1) Hash Map Lookup
+        # 1. O(1) Hash Map Lookup / Idempotency Check
         if normalized_num not in self.active_vehicles:
+            # Check if recently billed in parking_history to guarantee idempotency on retries/double-clicks
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM parking_history WHERE vehicle_number = ? ORDER BY id DESC LIMIT 1",
+                (normalized_num,)
+            )
+            recent = cursor.fetchone()
+            conn.close()
+
+            if recent:
+                recent_dict = dict(recent)
+                rates = CATEGORY_RATES.get(recent_dict["category"], {"base_fee": 20.0, "hourly_rate": 30.0})
+                return {
+                    "success": True,
+                    "already_billed": True,
+                    "message": f"Vehicle {normalized_num} was already billed and exited.",
+                    "summary": {
+                        "id": recent_dict["id"],
+                        "vehicle_number": recent_dict["vehicle_number"],
+                        "slot_number": recent_dict["slot_number"],
+                        "category": recent_dict["category"],
+                        "entry_time": recent_dict["entry_time"],
+                        "exit_time": recent_dict["exit_time"],
+                        "duration_minutes": recent_dict["duration_minutes"],
+                        "duration_formatted": f"{recent_dict['duration_minutes']} mins",
+                        "base_fee": rates["base_fee"],
+                        "hourly_rate": rates["hourly_rate"],
+                        "hours_billed": max(1, math.ceil(recent_dict["duration_minutes"] / 60)),
+                        "fee": recent_dict["fee"]
+                    },
+                    "queue_allocation": None
+                }
+
             return {
                 "success": False,
                 "message": f"Vehicle {normalized_num} is not currently parked in any active slot."
@@ -345,6 +433,7 @@ class ParkingManager:
         slot_number = session["slot_number"]
         category = session["category"]
         entry_time_str = session.get("entry_time")
+        driver_contact = session.get("driver_contact", "")
 
         # Parse Entry Time defensively
         entry_dt = datetime.now()
@@ -399,6 +488,7 @@ class ParkingManager:
                 INSERT INTO parking_history (vehicle_number, category, slot_number, entry_time, exit_time, duration_minutes, fee)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (normalized_num, category, slot_number, entry_time_str, exit_time_str, duration_minutes, total_fee))
+            history_id = cursor.lastrowid
 
             # 2. Delete from active_sessions
             cursor.execute("DELETE FROM active_sessions WHERE vehicle_number = ?", (normalized_num,))
@@ -427,9 +517,11 @@ class ParkingManager:
                 del self.active_vehicles[normalized_num]
 
             exit_summary = {
+                "id": history_id,
                 "vehicle_number": normalized_num,
                 "slot_number": slot_number,
                 "category": category,
+                "driver_contact": driver_contact,
                 "entry_time": entry_time_str,
                 "exit_time": exit_time_str,
                 "duration_minutes": int(duration_minutes),
@@ -440,11 +532,12 @@ class ParkingManager:
                 "fee": total_fee
             }
 
-            # 4. Check FIFO Waiting Queue to allocate to the next eligible waiting vehicle
+            # 4. Check FIFO Waiting Queue to allocate to the next strictly eligible waiting vehicle
             queue_allocation = self._dispatch_queue_for_slot(target_slot, conn)
 
             return {
                 "success": True,
+                "already_billed": False,
                 "message": f"Vehicle {normalized_num} exited Slot {slot_number}. Total Duration: {duration_formatted} | Fee: Rs. {total_fee:.2f}",
                 "summary": exit_summary,
                 "queue_allocation": queue_allocation
@@ -457,9 +550,10 @@ class ParkingManager:
 
     def _dispatch_queue_for_slot(self, slot: Slot, conn):
         """
-        Internal FIFO Queue Dispatcher:
-        Finds the first waiting vehicle from collections.deque that is eligible for `slot`.
+        Internal FIFO Queue Dispatcher (Requirement 5):
+        Finds the first waiting vehicle from collections.deque that strictly matches `slot.category`.
         Removes it from the queue and parks it in the freed slot.
+        Does NOT count waiting time as active parking time (sets active entry_time to dispatch timestamp).
         """
         if not slot or not slot.is_available() or not self.waiting_queue:
             return None
@@ -473,12 +567,10 @@ class ParkingManager:
         if eligible_index == -1:
             return None
 
-        # Extract the waiting vehicle
-        # If it's the head of deque, popleft() is strictly O(1)
+        # Extract the waiting vehicle in true FIFO order
         if eligible_index == 0:
             assigned_item = self.waiting_queue.popleft()
         else:
-            # If a lower vehicle matches category eligibility, rotate/remove
             assigned_item = self.waiting_queue[eligible_index]
             del self.waiting_queue[eligible_index]
 
@@ -496,7 +588,7 @@ class ParkingManager:
             item["queue_position"] = new_pos
             cursor.execute("UPDATE waiting_queue SET queue_position = ? WHERE vehicle_number = ?", (new_pos, item["vehicle_number"]))
 
-        # Occupy the slot with the dequeued vehicle
+        # Occupy the slot with the dequeued vehicle starting now (waiting time excluded from billing duration)
         cursor.execute("""
             UPDATE slots
             SET status = 'occupied', current_vehicle = ?, entry_time = ?
@@ -567,10 +659,15 @@ class ParkingManager:
             conn.close()
 
     # =========================================================================
-    # SLOT RESERVATION TOGGLE
+    # SLOT RESERVATION TOGGLE (STAY IN POSITION & UPDATE IN PLACE)
     # =========================================================================
     def toggle_slot_reservation(self, slot_id: int):
-        """Toggles a slot between 'available' and 'reserved'."""
+        """
+        Toggles a slot between 'available' and 'reserved' (Requirement 6):
+        - Prevents reserving an occupied slot.
+        - Prevents duplicate reservations.
+        - Dispatches waiting queue if unreserved.
+        """
         target_slot = None
         for slot in self.slots:
             if slot.id == slot_id:
@@ -581,7 +678,10 @@ class ParkingManager:
             return {"success": False, "message": f"Slot ID {slot_id} not found."}
 
         if target_slot.status == "occupied":
-            return {"success": False, "message": f"Cannot reserve Slot {target_slot.slot_number} because it is currently occupied by {target_slot.current_vehicle}."}
+            return {
+                "success": False,
+                "message": f"Cannot reserve Slot {target_slot.slot_number} because it is currently occupied by vehicle {target_slot.current_vehicle}."
+            }
 
         new_status = "reserved" if target_slot.status == "available" else "available"
 
@@ -592,17 +692,22 @@ class ParkingManager:
             conn.commit()
             target_slot.status = new_status
             
-            # If the slot was made available, check if waiting vehicles can use it
+            # If the slot was made available, check if waiting vehicles for this category can use it
             queue_allocation = None
             if new_status == "available":
                 queue_allocation = self._dispatch_queue_for_slot(target_slot, conn)
 
+            summary = self.get_dashboard_summary()
+
             return {
                 "success": True,
+                "slot_id": target_slot.id,
                 "slot_number": target_slot.slot_number,
-                "new_status": new_status,
+                "category": target_slot.category,
+                "new_status": target_slot.status,
                 "queue_allocation": queue_allocation,
-                "message": f"Slot {target_slot.slot_number} status changed to {new_status.upper()}."
+                "summary": summary,
+                "message": f"Slot {target_slot.slot_number} status updated to {target_slot.status.upper()}."
             }
         except Exception as e:
             conn.rollback()
@@ -614,16 +719,8 @@ class ParkingManager:
     # DSA SORTING ALGORITHMS: Merge Sort & Quick Sort
     # =========================================================================
     def merge_sort_history(self, history_list: list, sort_key: str = "exit_time", reverse: bool = False):
-        """
-        ALGORITHM: Merge Sort (Divide and Conquer)
-        TIME COMPLEXITY:
-            - Worst Case: O(N log N)
-            - Best Case: O(N log N)
-            - Average Case: O(N log N)
-        SPACE COMPLEXITY: O(N) Auxiliary Space (Array slicing and merging)
-        STABILITY: Stable sort (preserves relative order of equal elements)
-        """
-        comparison_count = [0]  # Mutable counter
+        """Merge Sort (Divide and Conquer) O(N log N)."""
+        comparison_count = [0]
 
         def _get_val(record):
             val = record.get(sort_key, "")
@@ -672,13 +769,7 @@ class ParkingManager:
         return sorted_arr
 
     def quick_sort_history(self, history_list: list, sort_key: str = "exit_time", reverse: bool = False):
-        """
-        ALGORITHM: Quick Sort (Partition-based)
-        TIME COMPLEXITY:
-            - Best / Average Case: O(N log N)
-            - Worst Case: O(N^2)
-        SPACE COMPLEXITY: O(log N) stack frames
-        """
+        """Quick Sort (Partition-based) O(N log N)."""
         comparison_count = [0]
 
         def _get_val(record):
@@ -719,7 +810,7 @@ class ParkingManager:
         return sorted_arr
 
     # =========================================================================
-    # HISTORY & SEARCH
+    # HISTORY & SEARCH (WITH RECORD RETRIEVAL & DELETION)
     # =========================================================================
     def get_parking_history(self, search_query: str = "", sort_by: str = "exit_time", order: str = "desc", algorithm: str = "mergesort"):
         """
@@ -734,7 +825,6 @@ class ParkingManager:
 
         records = [dict(row) for row in rows]
 
-        # 1. Linear Search Filtering
         if search_query:
             query = search_query.strip().lower()
             filtered_records = []
@@ -745,12 +835,59 @@ class ParkingManager:
                     filtered_records.append(rec)
             records = filtered_records
 
-        # 2. DSA Sorting (Merge Sort or Quick Sort)
         is_reverse = (order.lower() == "desc")
         if algorithm == "quicksort":
             return self.quick_sort_history(records, sort_key=sort_by, reverse=is_reverse)
         else:
             return self.merge_sort_history(records, sort_key=sort_by, reverse=is_reverse)
+
+    def get_history_record_by_id(self, record_id: int):
+        """
+        Fetches a single completed parking history record by ID (Requirement 2).
+        Returns the original transaction details without recalculating fee.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, vehicle_number, category, slot_number, entry_time, exit_time, duration_minutes, fee FROM parking_history WHERE id = ?",
+            (record_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+
+        rec = dict(row)
+        rates = CATEGORY_RATES.get(rec["category"], {"base_fee": 20.0, "hourly_rate": 30.0})
+        rec["base_fee"] = rates["base_fee"]
+        rec["hourly_rate"] = rates["hourly_rate"]
+        rec["hours_billed"] = max(1, math.ceil(rec["duration_minutes"] / 60))
+        return rec
+
+    def delete_parking_record(self, record_id: int):
+        """
+        Deletes only the selected completed history record (Requirement 2).
+        Safely handles linked database records and NEVER touches active vehicles or other slots.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT id, vehicle_number, slot_number FROM parking_history WHERE id = ?", (record_id,))
+            record = cursor.fetchone()
+            if not record:
+                return {"success": False, "message": f"Parking history record #{record_id} does not exist."}
+
+            cursor.execute("DELETE FROM parking_history WHERE id = ?", (record_id,))
+            conn.commit()
+            return {
+                "success": True,
+                "message": f"Parking history record #{record_id} ({record['vehicle_number']}) was successfully deleted."
+            }
+        except Exception as e:
+            conn.rollback()
+            return {"success": False, "message": f"Database error during record deletion: {str(e)}"}
+        finally:
+            conn.close()
 
     # =========================================================================
     # DASHBOARD & METRICS COMPUTATION
@@ -764,7 +901,6 @@ class ParkingManager:
         waiting_count = len(self.waiting_queue)
         occupancy_pct = round((occupied_slots / total_slots) * 100, 1) if total_slots > 0 else 0
 
-        # Category Breakdown
         categories = ["Two-Wheeler", "Four-Wheeler", "EV Charging", "Reserved"]
         category_stats = {}
         for cat in categories:

@@ -1,80 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- BILL RECEIPT (APPEARS ONLY ON ACTIVE VEHICLES PAGE AFTER AN EXIT) -->
-{% if receipt %}
-  <div id="receiptContainer" class="printable-receipt-area invoice-box" style="margin-bottom: 2rem;">
-    <div class="invoice-header">
-      <div>
-        <div class="invoice-brand">SmartPark Parking Receipt</div>
-        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
-          Official Parking Fee Invoice &bull; Generated on {{ receipt.exit_time }}
-        </div>
-      </div>
-      <span class="invoice-badge-paid">PAID &amp; COMPLETED</span>
-    </div>
-
-    <div style="text-align: center; margin: 1rem 0;">
-      <span class="invoice-plate-display">{{ receipt.vehicle_number }}</span>
-    </div>
-
-    <div class="invoice-grid">
-      <div class="invoice-row">
-        <span style="color: var(--text-muted);">Assigned Slot:</span>
-        <strong>Slot {{ receipt.slot_number }}</strong>
-      </div>
-      <div class="invoice-row">
-        <span style="color: var(--text-muted);">Vehicle Category:</span>
-        <strong>{{ receipt.category }}</strong>
-      </div>
-      <div class="invoice-row">
-        <span style="color: var(--text-muted);">Entry Time:</span>
-        <span>{{ receipt.entry_time }}</span>
-      </div>
-      <div class="invoice-row">
-        <span style="color: var(--text-muted);">Exit Time:</span>
-        <span>{{ receipt.exit_time }}</span>
-      </div>
-      <div class="invoice-row">
-        <span style="color: var(--text-muted);">Parking Duration:</span>
-        <strong>{{ receipt.duration_formatted or (receipt.duration_minutes ~ ' mins') }} ({{ receipt.duration_minutes }} mins)</strong>
-      </div>
-      <div class="invoice-row">
-        <span style="color: var(--text-muted);">Billing Rate:</span>
-        <span>Base {{ receipt.base_fee|currency }} + {{ receipt.hourly_rate|currency }}/hr</span>
-      </div>
-    </div>
-
-    <div class="invoice-total-row">
-      <span>Total Charge Paid:</span>
-      <span style="color: var(--teal-hover);">{{ receipt.fee|currency }}</span>
-    </div>
-
-    <!-- PRINT-ONLY RECEIPT FOOTER -->
-    <div class="print-footer-note" style="display: none;">
-      <div>Thank you for parking with SmartPark Parking Facility.</div>
-      <div style="font-size: 0.72rem; color: #666; margin-top: 4px;">Retain this receipt for your records. Standard tax rates applied.</div>
-    </div>
-
-    <div class="receipt-no-print" style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.25rem;">
-      <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">
-        <span>🖨️ Print Receipt</span>
-      </button>
-      <form action="{{ url_for('clear_bill') }}" method="POST" style="display: inline;">
-        <button type="submit" class="btn btn-primary btn-sm">
-          <span>Dismiss</span>
-        </button>
-      </form>
-    </div>
-  </div>
-{% endif %}
-
 <div class="card vehicles-content-card">
   <div class="card-header">
     <div>
       <h3 class="card-title">🚗 Currently Parked Vehicles</h3>
       <p class="card-subtitle">
-        Directory of all vehicles actively occupying parking slots with live duration and billing actions.
+        Directory of all vehicles actively occupying parking slots with live duration and instant exit &amp; billing.
       </p>
     </div>
 
@@ -103,7 +35,7 @@
 
     <!-- ACTIVE VEHICLES TABLE -->
     <div class="table-responsive">
-      <table class="data-table">
+      <table class="data-table" id="activeVehiclesTable">
         <thead>
           <tr>
             <th>Slot Assigned</th>
@@ -112,7 +44,7 @@
             <th>Driver Contact</th>
             <th>Entry Timestamp</th>
             <th>Live Duration</th>
-            <th>Billing Rate</th>
+            <th>Tariff Rate</th>
             <th>Action</th>
           </tr>
         </thead>
@@ -120,21 +52,24 @@
           {% if active_vehicles %}
             {% for veh in active_vehicles %}
               {% set rate_info = rates.get(veh.category, {'base_fee': 20.0, 'hourly_rate': 30.0}) %}
-              <tr>
+              <tr id="veh-row-{{ veh.vehicle_number }}">
                 <td>
                   <span class="badge badge-navy" style="font-size: 0.85rem; font-weight: 800;">
                     {{ veh.slot_number }}
                   </span>
                 </td>
                 <td>
-                  <span class="license-plate-mini" style="font-size: 0.92rem; font-weight: 800;">
-                    {{ veh.vehicle_number }}
-                  </span>
+                  <div class="license-plate-mini">
+                    <span class="plate-ind">IND</span>
+                    <span class="plate-num">{{ veh.vehicle_number }}</span>
+                  </div>
                 </td>
                 <td>
-                  <span class="badge badge-teal">{{ veh.category }}</span>
+                  <span class="badge {% if veh.category == 'EV Charging' %}badge-teal{% elif veh.category == 'Two-Wheeler' %}badge-blue{% elif veh.category == 'Reserved' %}badge-warning{% else %}badge-navy{% endif %}">
+                    {{ veh.category }}
+                  </span>
                 </td>
-                <td style="color: var(--text-muted); font-size: 0.85rem;">
+                <td style="color: var(--text-secondary); font-size: 0.85rem; font-family: monospace;">
                   {{ veh.driver_contact or '—' }}
                 </td>
                 <td style="font-size: 0.84rem; color: var(--text-muted);">
@@ -159,7 +94,7 @@
             <tr>
               <td colspan="8" style="text-align: center; padding: 3.5rem; color: var(--text-muted);">
                 <div style="font-size: 2.25rem; margin-bottom: 0.5rem;">🅿️</div>
-                <h4 style="font-weight: 700; color: var(--navy-primary); font-size: 1.1rem;">No Active Parked Vehicles</h4>
+                <h4 style="font-weight: 800; color: #ffffff; font-size: 1.15rem;">No Active Parked Vehicles</h4>
                 <p style="font-size: 0.88rem; margin-top: 0.35rem; color: var(--text-muted);">
                   {% if search_query %}
                     No parked vehicles matched your search "{{ search_query }}". Try clearing the filter.

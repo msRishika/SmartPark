@@ -12,6 +12,9 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
+  <!-- FLOATING TOAST NOTIFICATION CONTAINER (STAYS IN POSITION) -->
+  <div id="toastContainer" class="toast-container"></div>
+
   <div class="app-container">
     
     <!-- SIDEBAR -->
@@ -20,7 +23,7 @@
         <div class="brand-icon">P</div>
         <div class="brand-info">
           <h1>SmartPark</h1>
-          <p>Parking Management</p>
+          <p>Parking Facility</p>
         </div>
       </div>
 
@@ -48,7 +51,7 @@
             <span>🚗</span>
             <span>Active Vehicles</span>
           </div>
-          <span class="nav-badge {{ 'badge-amber' if global_summary.occupied_slots > 0 else 'badge-teal' }}">
+          <span class="nav-badge {{ 'badge-amber' if global_summary.occupied_slots > 0 else 'badge-teal' }}" id="navOccupiedBadge">
             {{ global_summary.occupied_slots }}
           </span>
         </a>
@@ -60,7 +63,7 @@
             <span>Waiting List</span>
           </div>
           {% if global_summary.waiting_count > 0 %}
-            <span class="nav-badge badge-amber">{{ global_summary.waiting_count }}</span>
+            <span class="nav-badge badge-amber" id="navWaitingBadge">{{ global_summary.waiting_count }}</span>
           {% endif %}
         </a>
 
@@ -128,7 +131,7 @@
   </div>
 
   <!-- ========================================================================
-       MODAL 1: PARK VEHICLE
+       MODAL 1: PARK VEHICLE (STRICT VALIDATION)
        ======================================================================== -->
   <div id="parkVehicleModal" class="modal-backdrop">
     <div class="modal-content">
@@ -136,7 +139,7 @@
         <h3 class="modal-title">🚗 Vehicle Entry Form</h3>
         <button type="button" class="alert-close" data-close-modal="parkVehicleModal">&times;</button>
       </div>
-      <form action="{{ url_for('park_vehicle') }}" method="POST">
+      <form action="{{ url_for('park_vehicle') }}" method="POST" id="parkVehicleForm">
         <div class="modal-body">
           <input type="hidden" name="preferred_slot_id" id="preferredSlotId" value="">
           
@@ -144,72 +147,105 @@
 
           <div class="form-group">
             <label class="form-label" for="vehicleNumber">Vehicle Registration Number <span style="color: var(--status-occupied);">*</span></label>
-            <input type="text" class="form-control" id="vehicleNumber" name="vehicle_number" placeholder="e.g. KA-01-AB-1234" required autofocus autocomplete="off">
-            <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; display: block;">
-              Vehicle will be assigned the first eligible available slot automatically.
+            <input 
+              type="text" 
+              class="form-control" 
+              id="vehicleNumber" 
+              name="vehicle_number" 
+              placeholder="e.g. ABCD1234 or KA01AB1234" 
+              pattern="[A-Z0-9]{3,16}" 
+              minlength="3" 
+              maxlength="16" 
+              required 
+              autofocus 
+              autocomplete="off"
+              value="{{ entry_form_data.get('vehicle_number', '') }}"
+              oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')"
+            >
+            <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
+              Accepts only uppercase letters (A–Z) and digits (0–9). No spaces, commas, dots, or symbols.
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="driverContact">Driver Contact Number (10 Digits) <span style="color: var(--status-occupied);">*</span></label>
+            <input 
+              type="tel" 
+              class="form-control" 
+              id="driverContact" 
+              name="driver_contact" 
+              placeholder="e.g. 9876543210" 
+              pattern="[0-9]{10}" 
+              minlength="10" 
+              maxlength="10" 
+              required
+              autocomplete="off"
+              value="{{ entry_form_data.get('driver_contact', '') }}"
+              oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+            >
+            <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
+              Must be exactly 10 numeric digits.
             </small>
           </div>
 
           <div class="form-group">
             <label class="form-label" for="vehicleCategory">Vehicle Category <span style="color: var(--status-occupied);">*</span></label>
             <select class="form-control" id="vehicleCategory" name="category" required>
-              <option value="Four-Wheeler" selected>Four-Wheeler (Car / Sedan / SUV)</option>
-              <option value="Two-Wheeler">Two-Wheeler (Motorcycle / Scooter)</option>
-              <option value="EV Charging">EV (Electric Vehicle Charging)</option>
-              <option value="Reserved">VIP / Accessible / Priority</option>
+              <option value="Four-Wheeler" {% if entry_form_data.get('category') == 'Four-Wheeler' or not entry_form_data.get('category') %}selected{% endif %}>Four-Wheeler (Car / Sedan / SUV)</option>
+              <option value="Two-Wheeler" {% if entry_form_data.get('category') == 'Two-Wheeler' %}selected{% endif %}>Two-Wheeler (Motorcycle / Scooter)</option>
+              <option value="EV Charging" {% if entry_form_data.get('category') == 'EV Charging' %}selected{% endif %}>EV (Electric Vehicle Charging Only)</option>
+              <option value="Reserved" {% if entry_form_data.get('category') == 'Reserved' %}selected{% endif %}>VIP / Accessible / Priority</option>
             </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="driverContact">Driver Contact (Optional)</label>
-            <input type="text" class="form-control" id="driverContact" name="driver_contact" placeholder="e.g. 9876543210">
+            <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
+              Assigned strictly to designated bays. EV Charging will never be assigned to standard bays.
+            </small>
           </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-close-modal="parkVehicleModal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Allocate Slot</button>
+          <button type="submit" class="btn btn-primary" id="btnSubmitPark">Allocate Slot</button>
         </div>
       </form>
     </div>
   </div>
 
   <!-- ========================================================================
-       MODAL 2: EXIT & BILLING
+       MODAL 2: VEHICLE EXIT & BILLING (IMMEDIATE PDF DOWNLOAD, NO PREVIEW)
        ======================================================================== -->
   <div id="exitVehicleModal" class="modal-backdrop">
     <div class="modal-content">
       <div class="modal-header">
-        <h3 class="modal-title">🏁 Vehicle Exit &amp; Billing</h3>
+        <h3 class="modal-title">🏁 Confirm Vehicle Exit &amp; Billing</h3>
         <button type="button" class="alert-close" data-close-modal="exitVehicleModal">&times;</button>
       </div>
-      <form action="{{ url_for('exit_vehicle') }}" method="POST">
+      <form action="{{ url_for('exit_vehicle') }}" method="POST" id="exitVehicleForm">
         <div class="modal-body">
           <div class="alert alert-info" style="margin-bottom: 1.25rem;">
-            Vehicle to Release: <strong id="exitVehDisplay" style="margin-left: 0.35rem;">-</strong>
+            <span>Vehicle to Release:</span>
+            <strong id="exitVehDisplay" style="margin-left: 0.5rem; font-size: 1.05rem; letter-spacing: 0.05em; color: var(--teal-primary);">-</strong>
           </div>
 
           <input type="hidden" name="vehicle_number" id="exitVehicleNumber" value="">
           
-          <!-- Live Calculated Bill Preview Box -->
-          <div id="exitBillPreviewBox" style="margin-bottom: 1.25rem;"></div>
-
           <div class="form-group">
-            <label class="form-label" for="simulatedMinutes">Duration Simulation (Optional)</label>
+            <label class="form-label" for="simulatedMinutes">Duration Stay Option</label>
             <select class="form-control" name="simulated_minutes" id="simulatedMinutes">
-              <option value="" selected>Calculate Real Elapsed Duration</option>
-              <option value="30">30 Minutes Stay</option>
-              <option value="60">1 Hour Stay</option>
-              <option value="120">2 Hours Stay</option>
-              <option value="240">4 Hours Stay</option>
+              <option value="" selected>Calculate Real Elapsed Stay Time</option>
+              <option value="30">Simulate 30 Minutes Stay</option>
+              <option value="60">Simulate 1 Hour Stay</option>
+              <option value="120">Simulate 2 Hours Stay</option>
+              <option value="240">Simulate 4 Hours Stay</option>
             </select>
-            <small style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.25rem; display: block;">
-              Select a duration to simulate extended stays or keep default for real elapsed time.
+            <small style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
+              Clicking Confirm and Bill will process the exit, release the bay, and automatically download your official PDF invoice receipt.
             </small>
           </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-close-modal="exitVehicleModal">Cancel</button>
-          <button type="submit" class="btn btn-danger">Confirm and Bill</button>
+          <button type="submit" class="btn btn-danger" id="btnConfirmExit">
+            <span>Confirm and Bill (Download PDF)</span>
+          </button>
         </div>
       </form>
     </div>

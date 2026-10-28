@@ -6,14 +6,11 @@
     <div>
       <h3 class="card-title">📜 Parking &amp; Billing History</h3>
       <p class="card-subtitle">
-        Historical log of completed parking sessions, total durations, and billing transactions.
+        Historical archive of completed parking sessions, fees, and original tax invoice receipts.
       </p>
     </div>
 
     <div style="display: flex; gap: 0.75rem; align-items: center;">
-      <button class="btn btn-secondary btn-sm" onclick="window.print()">
-        <span>🖨️ Print Report</span>
-      </button>
       <span class="badge badge-teal" style="font-size: 0.85rem; padding: 0.4rem 0.85rem;">
         {{ records|length }} Completed Session(s)
       </span>
@@ -23,13 +20,13 @@
   <div class="card-body">
 
     <!-- SEARCH & SORT CONTROLS FORM -->
-    <form action="{{ url_for('history') }}" method="GET" style="background: #f8fafc; border: 1px solid var(--border-medium); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.75rem;">
+    <form action="{{ url_for('history') }}" method="GET" style="background: var(--bg-surface); border: 1px solid var(--border-medium); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: 1.75rem;">
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)) 120px; gap: 1rem; align-items: flex-end;">
         
         <!-- Search Query -->
         <div class="form-group" style="margin-bottom: 0;">
           <label class="form-label" for="historySearch">Search Vehicle or Slot</label>
-          <input type="text" class="form-control" id="historySearch" name="q" value="{{ search_query }}" placeholder="e.g. KA-01 or S-07" autocomplete="off">
+          <input type="text" class="form-control" id="historySearch" name="q" value="{{ search_query }}" placeholder="e.g. ABCD1234 or S-07" autocomplete="off">
         </div>
 
         <!-- Sort By Key -->
@@ -56,7 +53,7 @@
         <!-- Apply Button -->
         <div>
           <button type="submit" class="btn btn-primary" style="width: 100%;">
-            <span>Apply Filter</span>
+            <span>Apply</span>
           </button>
         </div>
 
@@ -65,7 +62,7 @@
       {% if search_query or sort_by != 'exit_time' or order != 'desc' %}
         <div style="margin-top: 0.85rem; display: flex; align-items: center; justify-content: space-between;">
           <span style="font-size: 0.82rem; color: var(--text-muted);">Custom filter/sorting applied</span>
-          <a href="{{ url_for('history') }}" style="font-size: 0.82rem; color: var(--teal-hover); font-weight: 600; text-decoration: none;">&times; Reset All Filters</a>
+          <a href="{{ url_for('history') }}" style="font-size: 0.82rem; color: var(--teal-primary); font-weight: 700; text-decoration: none;">&times; Reset All Filters</a>
         </div>
       {% endif %}
     </form>
@@ -83,36 +80,60 @@
             <th>Exit Timestamp</th>
             <th>Duration</th>
             <th>Total Charge</th>
-            <th>Status</th>
+            <th style="text-align: right;">Actions</th>
           </tr>
         </thead>
         <tbody>
           {% if records %}
             {% for rec in records %}
               <tr>
-                <td style="color: var(--text-muted); font-size: 0.82rem; font-family: monospace;">#{{ rec.id }}</td>
+                <td style="color: var(--teal-primary); font-size: 0.82rem; font-family: monospace; font-weight: 700;">
+                  #{{ rec.id }}
+                </td>
                 <td>
-                  <span class="license-plate-mini" style="font-size: 0.9rem; font-weight: 800;">
-                    {{ rec.vehicle_number }}
+                  <div class="license-plate-mini">
+                    <span class="plate-ind">IND</span>
+                    <span class="plate-num">{{ rec.vehicle_number }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span class="badge {% if rec.category == 'EV Charging' %}badge-teal{% elif rec.category == 'Two-Wheeler' %}badge-blue{% elif rec.category == 'Reserved' %}badge-warning{% else %}badge-navy{% endif %}">
+                    {{ rec.category }}
                   </span>
                 </td>
                 <td>
-                  <span class="badge badge-teal">{{ rec.category }}</span>
+                  <span class="badge badge-navy" style="font-weight: 800;">
+                    {{ rec.slot_number }}
+                  </span>
+                </td>
+                <td style="font-size: 0.84rem; color: var(--text-muted);">
+                  {{ rec.entry_time }}
+                </td>
+                <td style="font-size: 0.84rem; color: var(--text-secondary);">
+                  {{ rec.exit_time }}
+                </td>
+                <td style="font-size: 0.85rem; font-weight: 600;">
+                  {{ rec.duration_minutes|duration_fmt }}
                 </td>
                 <td>
-                  <span class="badge badge-navy" style="font-weight: 700;">{{ rec.slot_number }}</span>
+                  <strong style="color: var(--teal-primary); font-size: 0.95rem;">
+                    {{ rec.fee|currency }}
+                  </strong>
                 </td>
-                <td style="font-size: 0.84rem; color: var(--text-muted);">{{ rec.entry_time }}</td>
-                <td style="font-size: 0.84rem; color: var(--text-muted);">{{ rec.exit_time }}</td>
-                <td>
-                  <strong>{{ rec.duration_minutes|duration_fmt }}</strong>
-                  <span style="font-size: 0.75rem; color: var(--text-muted);">({{ rec.duration_minutes }}m)</span>
-                </td>
-                <td>
-                  <strong style="color: var(--teal-hover); font-size: 0.95rem;">{{ rec.fee|currency }}</strong>
-                </td>
-                <td>
-                  <span class="badge badge-success">Paid</span>
+                <td style="text-align: right; white-space: nowrap;">
+                  <div style="display: inline-flex; gap: 0.5rem; justify-content: flex-end;">
+                    <!-- 1. Print Receipt Button (Requirement 2) -->
+                    <a href="{{ url_for('download_receipt', record_id=rec.id) }}" class="btn btn-secondary btn-sm" title="Download original PDF invoice">
+                      <span>🖨️ Print Receipt</span>
+                    </a>
+
+                    <!-- 2. Delete History Record Button (Requirement 2) -->
+                    <form action="{{ url_for('delete_history', record_id=rec.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to permanently delete history record #{{ rec.id }} for vehicle {{ rec.vehicle_number }}? This action cannot be undone.');">
+                      <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete record">
+                        <span>🗑️ Delete</span>
+                      </button>
+                    </form>
+                  </div>
                 </td>
               </tr>
             {% endfor %}
@@ -120,12 +141,12 @@
             <tr>
               <td colspan="9" style="text-align: center; padding: 3.5rem; color: var(--text-muted);">
                 <div style="font-size: 2.25rem; margin-bottom: 0.5rem;">📜</div>
-                <h4 style="font-weight: 700; color: var(--navy-primary); font-size: 1.1rem;">No Completed Sessions Found</h4>
+                <h4 style="font-weight: 800; color: #ffffff; font-size: 1.15rem;">No Completed Parking Sessions</h4>
                 <p style="font-size: 0.88rem; margin-top: 0.35rem; color: var(--text-muted);">
                   {% if search_query %}
-                    No history records matched your search "{{ search_query }}". Try clearing your search.
+                    No past sessions found matching query "{{ search_query }}".
                   {% else %}
-                    Completed sessions will appear here after parked vehicles exit the facility.
+                    Completed parking sessions and billing records will appear here after vehicles exit.
                   {% endif %}
                 </p>
               </td>

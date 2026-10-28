@@ -6,7 +6,7 @@
     <div>
       <h3 class="card-title">⏳ Customer Waiting List</h3>
       <p class="card-subtitle">
-        Vehicles queued for slots in chronological order when parking capacity is reached.
+        Vehicles queued in strict FIFO order when designated category bays reach maximum capacity.
       </p>
     </div>
 
@@ -20,9 +20,9 @@
     <!-- AUTOMATED ALLOCATION NOTICE -->
     <div class="alert alert-info" style="margin-bottom: 1.75rem; border-left: 4px solid var(--teal-primary);">
       <div>
-        <strong style="color: var(--teal-hover);">Automated Slot Assignment:</strong>
-        <span style="font-size: 0.85rem; margin-left: 0.35rem;">
-          When an occupied slot is released, the system automatically checks this waiting list and immediately allocates the freed slot to the first eligible vehicle in line.
+        <strong style="color: var(--teal-primary);">Automated Category-Compatible Dispatch:</strong>
+        <span style="font-size: 0.85rem; margin-left: 0.35rem; color: var(--text-secondary);">
+          When an occupied or reserved slot becomes available, the system automatically inspects this waiting list and allocates the slot to the first eligible vehicle in line matching that exact slot category.
         </span>
       </div>
     </div>
@@ -51,14 +51,17 @@
                   </span>
                 </td>
                 <td>
-                  <span class="license-plate-mini" style="font-size: 0.92rem; font-weight: 800;">
-                    {{ item.vehicle_number }}
-                  </span>
+                  <div class="license-plate-mini">
+                    <span class="plate-ind">IND</span>
+                    <span class="plate-num">{{ item.vehicle_number }}</span>
+                  </div>
                 </td>
                 <td>
-                  <span class="badge badge-blue">{{ item.category }}</span>
+                  <span class="badge {% if item.category == 'EV Charging' %}badge-teal{% elif item.category == 'Two-Wheeler' %}badge-blue{% elif item.category == 'Reserved' %}badge-warning{% else %}badge-navy{% endif %}">
+                    {{ item.category }}
+                  </span>
                 </td>
-                <td style="color: var(--text-muted); font-size: 0.85rem;">
+                <td style="color: var(--text-secondary); font-size: 0.85rem; font-family: monospace;">
                   {{ item.driver_contact or '—' }}
                 </td>
                 <td style="font-size: 0.84rem; color: var(--text-muted);">
@@ -83,9 +86,9 @@
             <tr>
               <td colspan="7" style="text-align: center; padding: 3.5rem; color: var(--text-muted);">
                 <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">✨</div>
-                <h4 style="font-weight: 700; color: var(--navy-primary); font-size: 1.1rem;">Waiting List is Clear</h4>
+                <h4 style="font-weight: 800; color: #ffffff; font-size: 1.15rem;">Waiting List is Clear</h4>
                 <p style="font-size: 0.88rem; margin-top: 0.35rem; color: var(--text-muted);">
-                  Eligible parking slots are currently available. Incoming vehicles will be accommodated immediately.
+                  Eligible parking slots are currently available across bays. Incoming vehicles will be accommodated immediately.
                 </p>
                 <div style="margin-top: 1.25rem;">
                   <button class="btn btn-primary btn-sm" onclick="openParkModal()">
