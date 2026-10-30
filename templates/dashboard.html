@@ -40,7 +40,7 @@
       <div class="stat-icon">🟡</div>
     </div>
     <div class="stat-value" id="kpiReservedSlots">{{ summary.reserved_slots }}</div>
-    <div class="stat-subtext">VIP / Priority bays</div>
+    <div class="stat-subtext">Held by advance reservation</div>
   </div>
 
   <!-- 5. Waiting List -->
@@ -75,7 +75,7 @@
         <h3 class="card-title">Real-Time Capacity Breakdown</h3>
         <p class="card-subtitle">Distribution of available, occupied, and reserved slots</p>
       </div>
-      <span class="badge badge-teal">30 Slots</span>
+      <span class="badge badge-teal">{{ summary.total_slots }} Slots</span>
     </div>
     <div class="card-body">
       <div class="chart-wrapper">
@@ -131,7 +131,7 @@
             oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')"
           >
           <small style="font-size: 0.74rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
-            Only uppercase letters (A–Z) and digits (0–9). No special characters.
+            Only uppercase letters (A–Z) and digits (0–9). Active reservations are automatically assigned.
           </small>
         </div>
 
@@ -161,13 +161,12 @@
           <select class="form-control" id="dashCategory" name="category" required>
             <option value="Four-Wheeler" {% if entry_form_data.get('category') == 'Four-Wheeler' or not entry_form_data.get('category') %}selected{% endif %}>Four-Wheeler (Car / Sedan / SUV)</option>
             <option value="Two-Wheeler" {% if entry_form_data.get('category') == 'Two-Wheeler' %}selected{% endif %}>Two-Wheeler (Motorcycle / Scooter)</option>
-            <option value="EV Charging" {% if entry_form_data.get('category') == 'EV Charging' %}selected{% endif %}>EV (Electric Vehicle Charging Only)</option>
-            <option value="Reserved" {% if entry_form_data.get('category') == 'Reserved' %}selected{% endif %}>VIP / Accessible / Priority</option>
+            <option value="EV Charging" {% if entry_form_data.get('category') in ['EV Charging', 'EV'] %}selected{% endif %}>EV (Electric Vehicle Charging Only)</option>
           </select>
         </div>
 
         <button type="submit" class="btn btn-primary" style="width: 100%;">
-          <span>Allocate Available Slot</span>
+          <span>Check In &amp; Allocate Slot</span>
         </button>
       </form>
     </div>
@@ -198,7 +197,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for cat_name, stats in summary.category_stats.items() %}
+            {% for cat_name, stats in summary.category_stats.items() if cat_name != 'Reserved' %}
               {% set cat_pct = (stats.occupied / stats.total * 100)|round(1) if stats.total > 0 else 0 %}
               <tr>
                 <td>
@@ -206,7 +205,7 @@
                     {% if cat_name == 'Two-Wheeler' %}🏍️ Two-Wheeler
                     {% elif cat_name == 'Four-Wheeler' %}🚗 Four-Wheeler
                     {% elif cat_name == 'EV Charging' %}⚡ EV Charging
-                    {% else %}👑 Reserved / VIP
+                    {% else %}{{ cat_name }}
                     {% endif %}
                   </strong>
                 </td>

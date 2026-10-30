@@ -1,0 +1,461 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- ADMIN MANAGE SLOTS (REQUIREMENT 2) -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">⚙️ Facility Bay Management</h3>
+      <p class="card-subtitle">
+        Add new parking slots, edit bay categories, slot types (Normal/Reserved), parking areas, and toggle enable/disable statuses.
+      </p>
+    </div>
+
+    <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+      <button type="button" class="btn btn-outline-danger" onclick="openDeleteSlotModal()" id="btnOpenDeleteSlot">
+        <span>🗑️ Delete Slot</span>
+      </button>
+      <button type="button" class="btn btn-primary" onclick="openAddSlotModal()" id="btnOpenAddSlot">
+        <span>➕ Add New Slot</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="card-body">
+    
+    <!-- STATS OVERVIEW CARDS -->
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 2rem;">
+      <div class="stat-card card-navy" style="padding: 1.25rem;">
+        <div class="stat-header">
+          <span class="stat-label">Total Slots</span>
+          <div class="stat-icon">🅿️</div>
+        </div>
+        <div class="stat-value">{{ summary.total_slots }}</div>
+        <div class="stat-subtext">Registered bays in DB</div>
+      </div>
+
+      <div class="stat-card card-teal" style="padding: 1.25rem;">
+        <div class="stat-header">
+          <span class="stat-label">Enabled Bays</span>
+          <div class="stat-icon">🟢</div>
+        </div>
+        <div class="stat-value">{{ summary.total_slots - summary.disabled_slots }}</div>
+        <div class="stat-subtext">Active for allocation</div>
+      </div>
+
+      <div class="stat-card card-danger" style="padding: 1.25rem;">
+        <div class="stat-header">
+          <span class="stat-label">Disabled Bays</span>
+          <div class="stat-icon">🚫</div>
+        </div>
+        <div class="stat-value">{{ summary.disabled_slots }}</div>
+        <div class="stat-subtext">Out of service</div>
+      </div>
+
+      <div class="stat-card card-blue" style="padding: 1.25rem;">
+        <div class="stat-header">
+          <span class="stat-label">Normal Bays</span>
+          <div class="stat-icon">🚗</div>
+        </div>
+        <div class="stat-value">{{ summary.normal_slots }}</div>
+        <div class="stat-subtext">Walk-in capacity</div>
+      </div>
+
+      <div class="stat-card card-warning" style="padding: 1.25rem;">
+        <div class="stat-header">
+          <span class="stat-label">Reserved Bays</span>
+          <div class="stat-icon">👑</div>
+        </div>
+        <div class="stat-value">{{ summary.reserved_type_slots }}</div>
+        <div class="stat-subtext">Priority reservation</div>
+      </div>
+    </div>
+
+    <!-- FILTER TOOLBAR -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+      <div class="filter-pills">
+        <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); align-self: center;">Category:</span>
+        <a href="{{ url_for('admin_slots', category='All', type=type_filter, status=status_filter) }}" class="filter-pill {{ 'active' if category_filter == 'All' else '' }}">All</a>
+        <a href="{{ url_for('admin_slots', category='Two-Wheeler', type=type_filter, status=status_filter) }}" class="filter-pill {{ 'active' if category_filter == 'Two-Wheeler' else '' }}">Two-Wheeler</a>
+        <a href="{{ url_for('admin_slots', category='Four-Wheeler', type=type_filter, status=status_filter) }}" class="filter-pill {{ 'active' if category_filter == 'Four-Wheeler' else '' }}">Four-Wheeler</a>
+        <a href="{{ url_for('admin_slots', category='EV Charging', type=type_filter, status=status_filter) }}" class="filter-pill {{ 'active' if category_filter in ['EV Charging', 'EV'] else '' }}">EV Charging</a>
+      </div>
+
+      <div class="filter-pills">
+        <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); align-self: center;">Type:</span>
+        <a href="{{ url_for('admin_slots', category=category_filter, type='All', status=status_filter) }}" class="filter-pill {{ 'active' if type_filter == 'All' else '' }}">All</a>
+        <a href="{{ url_for('admin_slots', category=category_filter, type='Normal', status=status_filter) }}" class="filter-pill {{ 'active' if type_filter == 'Normal' else '' }}">Normal</a>
+        <a href="{{ url_for('admin_slots', category=category_filter, type='Reserved', status=status_filter) }}" class="filter-pill {{ 'active' if type_filter == 'Reserved' else '' }}">Reserved</a>
+      </div>
+
+      <div class="filter-pills">
+        <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); align-self: center;">Status:</span>
+        <a href="{{ url_for('admin_slots', category=category_filter, type=type_filter, status='All') }}" class="filter-pill {{ 'active' if status_filter == 'All' else '' }}">All</a>
+        <a href="{{ url_for('admin_slots', category=category_filter, type=type_filter, status='enabled') }}" class="filter-pill {{ 'active' if status_filter == 'enabled' else '' }}">Enabled</a>
+        <a href="{{ url_for('admin_slots', category=category_filter, type=type_filter, status='disabled') }}" class="filter-pill {{ 'active' if status_filter == 'disabled' else '' }}">Disabled</a>
+      </div>
+    </div>
+
+    <!-- SLOTS TABLE -->
+    <div class="table-responsive">
+      <table class="data-table" id="adminSlotsTable">
+        <thead>
+          <tr>
+            <th>Slot ID</th>
+            <th>Vehicle Category</th>
+            <th>Slot Type</th>
+            <th>Parking Area</th>
+            <th>Live Status</th>
+            <th>Current Vehicle</th>
+            <th>Enable Status</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if slots %}
+            {% for slot in slots %}
+              {% set eff_status = 'disabled' if slot.is_enabled == 0 else slot.status %}
+              <tr>
+                <td>
+                  <strong style="color: var(--teal-primary); font-size: 0.95rem; letter-spacing: 0.05em;">
+                    {{ slot.slot_number }}
+                  </strong>
+                </td>
+                <td>
+                  <span class="badge {% if slot.category in ['EV', 'EV Charging'] %}badge-teal{% elif slot.category == 'Two-Wheeler' %}badge-blue{% else %}badge-navy{% endif %}">
+                    {{ slot.category }}
+                  </span>
+                </td>
+                <td>
+                  <span class="badge {{ 'badge-warning' if slot.slot_type == 'Reserved' else 'badge-navy' }}">
+                    {{ '👑 Reserved' if slot.slot_type == 'Reserved' else 'Normal' }}
+                  </span>
+                </td>
+                <td style="color: var(--text-secondary); font-size: 0.85rem;">
+                  {{ slot.area or 'General' }}
+                </td>
+                <td>
+                  {% if eff_status == 'available' %}
+                    <span class="badge badge-success">● Available</span>
+                  {% elif eff_status == 'occupied' %}
+                    <span class="badge badge-danger">● Occupied</span>
+                  {% elif eff_status == 'reserved' %}
+                    <span class="badge badge-warning">🔒 Reserved</span>
+                  {% else %}
+                    <span class="badge badge-secondary">🚫 Disabled</span>
+                  {% endif %}
+                </td>
+                <td style="font-size: 0.85rem;">
+                  {% if slot.current_vehicle %}
+                    <span class="plate-mini" style="font-family: monospace; font-weight: 700; color: var(--teal-primary);">
+                      {{ slot.current_vehicle }}
+                    </span>
+                  {% else %}
+                    <span style="color: var(--text-muted);">&mdash;</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if slot.is_enabled == 1 %}
+                    <span class="badge badge-success" style="font-size: 0.75rem;">Active</span>
+                  {% else %}
+                    <span class="badge badge-danger" style="font-size: 0.75rem;">Disabled</span>
+                  {% endif %}
+                </td>
+                <td style="text-align: right;">
+                  <div style="display: inline-flex; gap: 0.5rem; justify-content: flex-end;">
+                    <button type="button" class="btn btn-secondary btn-sm"
+                            onclick="openEditSlotModal('{{ slot.id }}', '{{ slot.slot_number }}', '{{ slot.category }}', '{{ slot.slot_type }}', '{{ slot.area }}', '{{ slot.is_enabled }}')">
+                      ✏️ Edit
+                    </button>
+
+                    <button type="button" class="btn btn-outline-danger btn-sm"
+                            title="Delete this bay"
+                            onclick="openDeleteSlotModal('{{ slot.slot_number }}', '{{ slot.category }}', '{{ slot.slot_type }}', '{{ slot.area }}')">
+                      🗑️
+                    </button>
+
+                    <form action="{{ url_for('admin_toggle_slot_status', slot_id=slot.id) }}" method="POST" style="display: inline;">
+                      {% if slot.is_enabled == 1 %}
+                        <button type="submit" class="btn btn-outline-danger btn-sm" 
+                                {% if slot.status == 'occupied' %}disabled title="Cannot disable occupied slot"{% endif %}>
+                          Disable
+                        </button>
+                      {% else %}
+                        <button type="submit" class="btn btn-primary btn-sm">
+                          Enable
+                        </button>
+                      {% endif %}
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="8" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                No slots found matching your filter selection.
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- ========================================================================
+     MODAL: ADD NEW SLOT (PERSISTENT DB INSERTION)
+     ======================================================================== -->
+<div id="addSlotModal" class="modal-backdrop">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 class="modal-title">➕ Add New Parking Slot</h3>
+      <button type="button" class="alert-close" data-close-modal="addSlotModal">&times;</button>
+    </div>
+    <form action="{{ url_for('admin_add_slot') }}" method="POST">
+      <div class="modal-body">
+        
+        <div class="form-group">
+          <label class="form-label" for="addSlotNumber">Slot Number / Bay ID <span style="color: var(--status-occupied);">*</span></label>
+          <input 
+            type="text" 
+            class="form-control" 
+            id="addSlotNumber" 
+            name="slot_number" 
+            placeholder="e.g. S-31" 
+            pattern="[A-Za-z0-9\-]{2,10}" 
+            required 
+            autocomplete="off"
+            oninput="this.value = this.value.toUpperCase()"
+          >
+          <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
+            Unique bay identifier (letters, digits, or hyphen).
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="addCategory">Vehicle Category <span style="color: var(--status-occupied);">*</span></label>
+          <select class="form-control" id="addCategory" name="category" required>
+            <option value="Four-Wheeler">Four-Wheeler</option>
+            <option value="Two-Wheeler">Two-Wheeler</option>
+            <option value="EV Charging">EV (Electric Vehicle Charging Only)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="addSlotType">Slot Type <span style="color: var(--status-occupied);">*</span></label>
+          <select class="form-control" id="addSlotType" name="slot_type" required>
+            <option value="Normal">Normal (Standard Walk-In &amp; Waiting Queue Allocation)</option>
+            <option value="Reserved">Reserved (Priority Advance Booking Only)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="addArea">Applicable Parking Area <span style="color: var(--status-occupied);">*</span></label>
+          <input 
+            type="text" 
+            class="form-control" 
+            id="addArea" 
+            name="area" 
+            list="areaOptions" 
+            placeholder="e.g. North Bay or South Bay" 
+            required
+          >
+          <datalist id="areaOptions">
+            {% for a in areas %}
+              <option value="{{ a }}">
+            {% endfor %}
+            <option value="Two-Wheeler Bay">
+            <option value="North Bay">
+            <option value="South Bay">
+            <option value="EV Charging Bay">
+          </datalist>
+        </div>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem;">
+          <input type="checkbox" id="addIsEnabled" name="is_enabled" value="1" checked style="width: 18px; height: 18px; accent-color: var(--teal-primary);">
+          <label for="addIsEnabled" style="font-size: 0.9rem; font-weight: 600; color: #ffffff; cursor: pointer; margin-bottom: 0;">
+            Enable Bay Immediately upon creation
+          </label>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close-modal="addSlotModal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Slot to Facility</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ========================================================================
+     MODAL: EDIT SLOT (PERSISTENT DB UPDATE)
+     ======================================================================== -->
+<div id="editSlotModal" class="modal-backdrop">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 class="modal-title">✏️ Edit Parking Slot Details</h3>
+      <button type="button" class="alert-close" data-close-modal="editSlotModal">&times;</button>
+    </div>
+    <form action="" method="POST" id="editSlotForm">
+      <div class="modal-body">
+        
+        <div class="alert alert-info" style="margin-bottom: 1.25rem;">
+          <span>Editing Slot:</span>
+          <strong id="editSlotNumberDisplay" style="margin-left: 0.5rem; color: var(--teal-primary); font-size: 1.05rem;">-</strong>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="editCategory">Vehicle Category <span style="color: var(--status-occupied);">*</span></label>
+          <select class="form-control" id="editCategory" name="category" required>
+            <option value="Four-Wheeler">Four-Wheeler</option>
+            <option value="Two-Wheeler">Two-Wheeler</option>
+            <option value="EV Charging">EV (Electric Vehicle Charging Only)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="editSlotType">Slot Type <span style="color: var(--status-occupied);">*</span></label>
+          <select class="form-control" id="editSlotType" name="slot_type" required>
+            <option value="Normal">Normal</option>
+            <option value="Reserved">Reserved</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="editArea">Parking Area <span style="color: var(--status-occupied);">*</span></label>
+          <input 
+            type="text" 
+            class="form-control" 
+            id="editArea" 
+            name="area" 
+            list="areaOptions" 
+            required
+          >
+        </div>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem;">
+          <input type="checkbox" id="editIsEnabled" name="is_enabled" value="1" style="width: 18px; height: 18px; accent-color: var(--teal-primary);">
+          <label for="editIsEnabled" style="font-size: 0.9rem; font-weight: 600; color: #ffffff; cursor: pointer; margin-bottom: 0;">
+            Bay Active / Enabled
+          </label>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close-modal="editSlotModal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ========================================================================
+     MODAL: DELETE SLOT (STRICT 4-FIELD MATCH & SAFETY VERIFICATION)
+     ======================================================================== -->
+<div id="deleteSlotModal" class="modal-backdrop">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 class="modal-title" style="color: #ef4444;">🗑️ Delete Parking Slot</h3>
+      <button type="button" class="alert-close" data-close-modal="deleteSlotModal">&times;</button>
+    </div>
+    <form action="{{ url_for('admin_delete_slot') }}" method="POST" id="deleteSlotForm">
+      <div class="modal-body">
+        
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+          To permanently delete a slot, supply all <strong>4 matching details</strong> exactly as recorded in the facility database. If details do not match or the bay is currently in use, deletion will be blocked.
+        </p>
+
+        <!-- 1. Slot Number / Bay ID -->
+        <div class="form-group">
+          <label class="form-label" for="deleteSlotNumber">1. Slot Number / Bay ID <span style="color: var(--status-occupied);">*</span></label>
+          <input 
+            type="text" 
+            class="form-control" 
+            id="deleteSlotNumber" 
+            name="slot_number" 
+            placeholder="e.g. S-31" 
+            pattern="[A-Za-z0-9\-]{2,10}" 
+            required 
+            autocomplete="off"
+            oninput="this.value = this.value.toUpperCase(); checkDeleteSlotMatch();"
+          >
+          <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
+            Unique bay identifier, such as S31 or S-31.
+          </small>
+        </div>
+
+        <!-- 2. Vehicle Category -->
+        <div class="form-group">
+          <label class="form-label" for="deleteCategory">2. Vehicle Category <span style="color: var(--status-occupied);">*</span></label>
+          <select class="form-control" id="deleteCategory" name="category" required onchange="checkDeleteSlotMatch();">
+            <option value="Four-Wheeler">Four-Wheeler</option>
+            <option value="Two-Wheeler">Two-Wheeler</option>
+            <option value="EV Charging">EV (Electric Vehicle Charging Only)</option>
+          </select>
+        </div>
+
+        <!-- 3. Slot Type -->
+        <div class="form-group">
+          <label class="form-label" for="deleteSlotType">3. Slot Type <span style="color: var(--status-occupied);">*</span></label>
+          <select class="form-control" id="deleteSlotType" name="slot_type" required onchange="checkDeleteSlotMatch();">
+            <option value="Normal">Normal</option>
+            <option value="Reserved">Reserved</option>
+          </select>
+        </div>
+
+        <!-- 4. Applicable Parking Area -->
+        <div class="form-group">
+          <label class="form-label" for="deleteArea">4. Applicable Parking Area <span style="color: var(--status-occupied);">*</span></label>
+          <input 
+            type="text" 
+            class="form-control" 
+            id="deleteArea" 
+            name="area" 
+            list="deleteAreaOptions" 
+            placeholder="e.g. North Bay or South Bay" 
+            required
+            oninput="checkDeleteSlotMatch();"
+          >
+          <datalist id="deleteAreaOptions">
+            {% for a in areas %}
+              <option value="{{ a }}">
+            {% endfor %}
+            <option value="Two-Wheeler Bay">
+            <option value="North Bay">
+            <option value="South Bay">
+            <option value="EV Charging Bay">
+          </datalist>
+        </div>
+
+        <!-- MATCH PREVIEW & SAFETY STATUS BOX -->
+        <div id="deleteSlotMatchPreview" style="display: none; margin-top: 1rem;"></div>
+
+        <!-- CONFIRMATION CHECKBOX -->
+        <div class="form-group" style="display: flex; align-items: flex-start; gap: 0.75rem; margin-top: 1.25rem;">
+          <input 
+            type="checkbox" 
+            id="deleteConfirmCheck" 
+            name="confirm_deletion" 
+            value="1" 
+            required 
+            style="width: 18px; height: 18px; accent-color: #ef4444; margin-top: 2px;"
+            onchange="checkDeleteSlotMatch();"
+          >
+          <label for="deleteConfirmCheck" style="font-size: 0.88rem; font-weight: 600; color: #f87171; cursor: pointer; margin-bottom: 0;">
+            I confirm that I want to permanently delete this parking slot from the database.
+          </label>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close-modal="deleteSlotModal">Cancel</button>
+        <button type="submit" class="btn btn-danger" id="btnConfirmDeleteSlot" disabled>
+          <span>Confirm &amp; Delete Slot</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

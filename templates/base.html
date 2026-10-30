@@ -74,12 +74,38 @@
             <span>Parking History</span>
           </div>
         </a>
+
+        <!-- 6. Admin: Manage Slots (Visible ONLY to Admin) -->
+        {% if is_admin %}
+          <a href="{{ url_for('admin_slots') }}" class="nav-item {{ 'active' if request.endpoint == 'admin_slots' else '' }}" id="navManageSlots">
+            <div class="nav-link-content">
+              <span>⚙️</span>
+              <span>Manage Slots</span>
+            </div>
+            <span class="nav-badge badge-teal">Admin</span>
+          </a>
+        {% endif %}
+
+        <!-- 7. Logout for All Users -->
+        <a href="{{ url_for('logout') }}" class="nav-item nav-item-logout" id="navLogout">
+          <div class="nav-link-content">
+            <span>🚪</span>
+            <span>Sign Out</span>
+          </div>
+        </a>
       </nav>
 
       <div class="sidebar-footer">
-        <div class="system-status-indicator">
+        <div class="user-profile-badge">
+          <div class="user-avatar-icon">{{ '🛡️' if is_admin else '👤' }}</div>
+          <div class="user-profile-details">
+            <span class="user-name-text" title="{{ current_user_email }}">{{ current_user_email or 'Guest User' }}</span>
+            <span class="user-role-badge role-{{ current_user_role }}">{{ current_user_role|upper or 'USER' }}</span>
+          </div>
+        </div>
+        <div class="system-status-indicator" style="margin-top: 0.65rem;">
           <div class="status-dot-pulse"></div>
-          <span>System Online &bull; 30 Slots</span>
+          <span>System Online &bull; {{ global_summary.total_slots }} Slots</span>
         </div>
       </div>
     </aside>
@@ -100,9 +126,17 @@
             <span id="liveClock">{{ current_time_str }}</span>
           </div>
 
+          <div class="user-status-pill">
+            <span>{{ '🛡️ Admin' if is_admin else '👤 User' }}</span>
+          </div>
+
           <button class="btn btn-primary btn-sm" onclick="openParkModal()">
             <span>➕ Park Vehicle</span>
           </button>
+
+          <a href="{{ url_for('logout') }}" class="btn btn-secondary btn-sm" title="Sign Out">
+            <span>Logout</span>
+          </a>
         </div>
       </header>
 
@@ -131,12 +165,12 @@
   </div>
 
   <!-- ========================================================================
-       MODAL 1: PARK VEHICLE (STRICT VALIDATION)
+       MODAL 1: PARK VEHICLE (STRICT VALIDATION & RESERVATION CHECK-IN)
        ======================================================================== -->
   <div id="parkVehicleModal" class="modal-backdrop">
     <div class="modal-content">
       <div class="modal-header">
-        <h3 class="modal-title">🚗 Vehicle Entry Form</h3>
+        <h3 class="modal-title">🚗 Vehicle Entry &amp; Check-In Form</h3>
         <button type="button" class="alert-close" data-close-modal="parkVehicleModal">&times;</button>
       </div>
       <form action="{{ url_for('park_vehicle') }}" method="POST" id="parkVehicleForm">
@@ -163,7 +197,7 @@
               oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')"
             >
             <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
-              Accepts only uppercase letters (A–Z) and digits (0–9). No spaces, commas, dots, or symbols.
+              Accepts only uppercase letters (A–Z) and digits (0–9). If you hold an active reservation, your reserved bay will be automatically assigned.
             </small>
           </div>
 
@@ -193,8 +227,7 @@
             <select class="form-control" id="vehicleCategory" name="category" required>
               <option value="Four-Wheeler" {% if entry_form_data.get('category') == 'Four-Wheeler' or not entry_form_data.get('category') %}selected{% endif %}>Four-Wheeler (Car / Sedan / SUV)</option>
               <option value="Two-Wheeler" {% if entry_form_data.get('category') == 'Two-Wheeler' %}selected{% endif %}>Two-Wheeler (Motorcycle / Scooter)</option>
-              <option value="EV Charging" {% if entry_form_data.get('category') == 'EV Charging' %}selected{% endif %}>EV (Electric Vehicle Charging Only)</option>
-              <option value="Reserved" {% if entry_form_data.get('category') == 'Reserved' %}selected{% endif %}>VIP / Accessible / Priority</option>
+              <option value="EV Charging" {% if entry_form_data.get('category') in ['EV Charging', 'EV'] %}selected{% endif %}>EV (Electric Vehicle Charging Only)</option>
             </select>
             <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
               Assigned strictly to designated bays. EV Charging will never be assigned to standard bays.
@@ -203,14 +236,14 @@
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-close-modal="parkVehicleModal">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="btnSubmitPark">Allocate Slot</button>
+          <button type="submit" class="btn btn-primary" id="btnSubmitPark">Check In &amp; Allocate Bay</button>
         </div>
       </form>
     </div>
   </div>
 
   <!-- ========================================================================
-       MODAL 2: VEHICLE EXIT & BILLING (IMMEDIATE PDF DOWNLOAD, NO PREVIEW)
+       MODAL 2: VEHICLE EXIT & BILLING (IMMEDIATE PDF DOWNLOAD)
        ======================================================================== -->
   <div id="exitVehicleModal" class="modal-backdrop">
     <div class="modal-content">
@@ -246,6 +279,81 @@
           <button type="submit" class="btn btn-danger" id="btnConfirmExit">
             <span>Confirm and Bill (Download PDF)</span>
           </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 3: RESERVE VEHICLE FORM (REQUIREMENT 4)
+       ======================================================================== -->
+  <div id="reserveSlotModal" class="modal-backdrop">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">📑 Reserve Parking Bay</h3>
+        <button type="button" class="alert-close" data-close-modal="reserveSlotModal">&times;</button>
+      </div>
+      <form action="{{ url_for('reserve_slot_route') }}" method="POST" id="reserveSlotForm">
+        <div class="modal-body">
+          <input type="hidden" name="slot_id" id="reserveSlotId" value="">
+          
+          <div class="alert alert-info" style="margin-bottom: 1.25rem;">
+            <span>Target Bay:</span>
+            <strong id="reserveSlotDisplay" style="margin-left: 0.5rem; color: var(--teal-primary);">-</strong>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reserveVehicleNumber">Vehicle Registration Number <span style="color: var(--status-occupied);">*</span></label>
+            <input 
+              type="text" 
+              class="form-control" 
+              id="reserveVehicleNumber" 
+              name="vehicle_number" 
+              placeholder="e.g. ABCD1234 or KA01AB1234" 
+              pattern="[A-Z0-9]{3,16}" 
+              minlength="3" 
+              maxlength="16" 
+              required 
+              autocomplete="off"
+              oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')"
+            >
+            <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
+              Uppercase letters (A–Z) and digits (0–9) only. This vehicle number will be held for this bay.
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reserveCategory">Vehicle Category <span style="color: var(--status-occupied);">*</span></label>
+            <select class="form-control" id="reserveCategory" name="category" required>
+              <option value="Four-Wheeler">Four-Wheeler (Car / Sedan / SUV)</option>
+              <option value="Two-Wheeler">Two-Wheeler (Motorcycle / Scooter)</option>
+              <option value="EV Charging">EV (Electric Vehicle Charging Only)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reserveDriverContact">Driver Phone Number (10 Digits) <span style="color: var(--status-occupied);">*</span></label>
+            <input 
+              type="tel" 
+              class="form-control" 
+              id="reserveDriverContact" 
+              name="driver_contact" 
+              placeholder="e.g. 9876543210" 
+              pattern="[0-9]{10}" 
+              minlength="10" 
+              maxlength="10" 
+              required
+              autocomplete="off"
+              oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+            >
+            <small style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem; display: block;">
+              Must be exactly 10 numeric digits.
+            </small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-close-modal="reserveSlotModal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btnSubmitReserve">Confirm Reservation</button>
         </div>
       </form>
     </div>

@@ -7,6 +7,7 @@ Implements:
 2. Searching: Linear Search O(N) for first eligible available parking slot allocation.
 3. Queue: Python `collections.deque` for true O(1) FIFO waiting queue management with strict category compatibility.
 4. Sorting: Custom Merge Sort and Quick Sort algorithms (O(N log N)) for parking history.
+5. Reservation & Slot Management: Strict category and Normal/Reserved slot type segregation, persistent DB operations.
 """
 
 from collections import deque
@@ -20,6 +21,7 @@ CATEGORY_RATES = {
     "Two-Wheeler": {"base_fee": 10.0, "hourly_rate": 15.0},
     "Four-Wheeler": {"base_fee": 20.0, "hourly_rate": 30.0},
     "EV Charging": {"base_fee": 25.0, "hourly_rate": 40.0},
+    "EV": {"base_fee": 25.0, "hourly_rate": 40.0},
     "Reserved": {"base_fee": 30.0, "hourly_rate": 50.0}
 }
 
@@ -65,51 +67,74 @@ def validate_driver_contact_number(driver_contact: str) -> tuple[bool, str]:
 
 
 class Slot:
-    """Represents a physical parking slot."""
-    def __init__(self, slot_id: int, slot_number: str, category: str, status: str = "available", current_vehicle: str = None, entry_time: str = None):
+    """Represents a physical parking slot with category, slot type, area, and status."""
+    def __init__(self, slot_id: int, slot_number: str, category: str, status: str = "available",
+                 current_vehicle: str = None, entry_time: str = None,
+                 slot_type: str = "Normal", area: str = "General", is_enabled: int = 1):
         self.id = slot_id
         self.slot_number = slot_number
-        self.category = category  # 'Two-Wheeler', 'Four-Wheeler', 'EV Charging', 'Reserved'
-        self.status = status      # 'available', 'occupied', 'reserved'
+        self.category = category    # 'Two-Wheeler', 'Four-Wheeler', 'EV Charging'
+        self.status = status        # 'available', 'occupied', 'reserved', 'disabled'
         self.current_vehicle = current_vehicle
         self.entry_time = entry_time
+        self.slot_type = slot_type  # 'Normal', 'Reserved'
+        self.area = area            # 'Two-Wheeler Bay', 'North Bay', 'South Bay', etc.
+        self.is_enabled = int(is_enabled)
 
     def is_available(self) -> bool:
-        return self.status == "available"
+        """A slot is available only if it is enabled and its status is 'available'."""
+        return self.is_enabled == 1 and self.status == "available"
 
     def is_eligible_for(self, vehicle_category: str) -> bool:
         """
-        Check if this slot strictly accommodates the given vehicle category (Requirement 5):
+        Check if this slot strictly accommodates the given vehicle category (Requirement 3 & 5):
         - Two-Wheeler: assign only to compatible Two-Wheeler slot.
         - Four-Wheeler: assign only to compatible standard Four-Wheeler slot.
         - EV requiring charging: assign only to designated EV Charging slot (NEVER fallback to Four-Wheeler).
-        - Reserved: assign only to designated Reserved / VIP slot.
+        - EV slots must NEVER be assigned to Two-Wheeler or Four-Wheeler vehicles.
         """
-        return self.category == vehicle_category
+        v_cat = (vehicle_category or "").strip()
+        s_cat = (self.category or "").strip()
+
+        # EV vehicle matching
+        if v_cat in ("EV", "EV Charging"):
+            return s_cat in ("EV", "EV Charging")
+
+        # Slot is EV: Non-EV vehicles can NEVER park in EV slots
+        if s_cat in ("EV", "EV Charging"):
+            return False
+
+        return s_cat == v_cat
 
     def to_dict(self):
+        effective_status = "disabled" if self.is_enabled == 0 else self.status
         return {
             "id": self.id,
             "slot_number": self.slot_number,
             "category": self.category,
-            "status": self.status,
+            "status": effective_status,
+            "raw_status": self.status,
             "current_vehicle": self.current_vehicle,
-            "entry_time": self.entry_time
+            "entry_time": self.entry_time,
+            "slot_type": self.slot_type,
+            "area": self.area,
+            "is_enabled": self.is_enabled
         }
 
 
 class ParkingManager:
     """
-    Central Manager managing 30 parking slots, active parked vehicles,
-    FIFO waiting queue with strict compatibility, and parking history.
+    Central Manager managing parking slots, active parked vehicles,
+    FIFO waiting queue with strict compatibility, active reservations, and parking history.
     """
     def __init__(self, db_path=None):
         self.db_path = db_path
-        self.slots = []                        # List of 30 Slot objects [O(N) search space]
+        self.slots = []                        # List of Slot objects [O(N) search space]
         self.active_vehicles = {}              # Hash Map: vehicle_number -> session_info [O(1) lookup]
         self.waiting_queue = deque()           # collections.deque for FIFO waiting vehicles [O(1) enqueue/dequeue]
+        self.active_reservations = {}          # Hash Map: vehicle_number -> reservation_info [O(1) lookup]
         
-        # DSA Performance Metrics for Viva / Faculty Demonstration
+        # DSA Performance Metrics for Viva / Demonstration
         self.last_search_metrics = {
             "algorithm": "Linear Search",
             "probes_count": 0,
@@ -130,18 +155,46 @@ class ParkingManager:
             return get_db_connection(self.db_path)
         return get_db_connection()
 
+    def get_slot_by_id(self, slot_id: int):
+        """Finds a slot by its primary key ID."""
+        for slot in self.slots:
+            if slot.id == slot_id:
+                return slot
+        return None
+
+    def get_slot_by_number(self, slot_number: str):
+        """Finds a slot by its unique slot number string (e.g. S-01)."""
+        num = str(slot_number).strip().upper()
+        for slot in self.slots:
+            if slot.slot_number.upper() == num:
+                return slot
+        return None
+
+    def get_active_reservation(self, vehicle_number: str):
+        """Returns the active reservation dictionary for a given vehicle number if exists."""
+        norm = (vehicle_number or "").strip().upper()
+        return self.active_reservations.get(norm)
+
     def reload_from_db(self):
         """
         Loads all persistent data from SQLite into in-memory DSA structures:
         - slots: List[Slot]
         - active_vehicles: dict
         - waiting_queue: collections.deque
+        - active_reservations: dict
         """
         conn = self.get_connection()
         cursor = conn.cursor()
 
         # 1. Load Slots
-        cursor.execute("SELECT id, slot_number, category, status, current_vehicle, entry_time FROM slots ORDER BY id ASC")
+        cursor.execute("""
+            SELECT id, slot_number, category, status, current_vehicle, entry_time,
+                   COALESCE(slot_type, 'Normal') as slot_type,
+                   COALESCE(area, 'General') as area,
+                   COALESCE(is_enabled, 1) as is_enabled
+            FROM slots 
+            ORDER BY id ASC
+        """)
         rows = cursor.fetchall()
         self.slots = [
             Slot(
@@ -150,7 +203,10 @@ class ParkingManager:
                 category=row["category"],
                 status=row["status"],
                 current_vehicle=row["current_vehicle"],
-                entry_time=row["entry_time"]
+                entry_time=row["entry_time"],
+                slot_type=row["slot_type"],
+                area=row["area"],
+                is_enabled=row["is_enabled"]
             )
             for row in rows
         ]
@@ -181,27 +237,40 @@ class ParkingManager:
                 "created_at": row["created_at"]
             })
 
+        # 4. Rebuild Active Reservations: Hash Map
+        self.active_reservations.clear()
+        try:
+            cursor.execute("SELECT id, slot_id, slot_number, vehicle_number, category, driver_contact, status, created_at FROM reservations WHERE status = 'active'")
+            for row in cursor.fetchall():
+                v_num = row["vehicle_number"].strip().upper()
+                self.active_reservations[v_num] = {
+                    "id": row["id"],
+                    "slot_id": row["slot_id"],
+                    "slot_number": row["slot_number"],
+                    "vehicle_number": v_num,
+                    "category": row["category"],
+                    "driver_contact": row["driver_contact"],
+                    "status": row["status"],
+                    "created_at": row["created_at"]
+                }
+        except Exception:
+            pass
+
         conn.close()
 
     # =========================================================================
     # DSA SEARCHING: Linear Search for First Available Eligible Slot
     # =========================================================================
-    def find_first_available_slot(self, vehicle_category: str):
+    def find_first_available_slot(self, vehicle_category: str, slot_type: str = "Normal"):
         """
         ALGORITHM: Linear Search
-        TIME COMPLEXITY:
-            - Best Case: O(1) (First checked slot is free and strictly eligible)
-            - Worst Case: O(N) (Iterates through all N slots)
-            - Average Case: O(N/2) ~ O(N)
-        SPACE COMPLEXITY: O(1) Auxiliary space
-        
-        Scans slots sequentially to find the first eligible slot with status == 'available'.
-        Enforces strict category matching (no fallback).
+        Scans slots sequentially to find the first eligible slot with status == 'available'
+        and matching slot_type (Requirement 4: walk-ins allocate Normal slots).
         """
         probes = 0
         for slot in self.slots:
             probes += 1
-            if slot.is_available() and slot.is_eligible_for(vehicle_category):
+            if slot.is_available() and slot.slot_type == slot_type and slot.is_eligible_for(vehicle_category):
                 self.last_search_metrics = {
                     "algorithm": "Linear Search",
                     "probes_count": probes,
@@ -219,7 +288,192 @@ class ParkingManager:
         return None
 
     # =========================================================================
-    # VEHICLE ENTRY & ALLOCATION
+    # RESERVATION MANAGEMENT (REQUIREMENT 4)
+    # =========================================================================
+    def reserve_slot(self, slot_id: int, vehicle_number: str, category: str, driver_contact: str = ""):
+        """
+        Reserves a designated Reserved slot for a specific vehicle (Requirement 4):
+        - Strict vehicle registration and 10-digit phone number validation.
+        - Slot must be available, enabled, and designated as slot_type == 'Reserved'.
+        - Enforces strict category compatibility.
+        - Prevents duplicate reservations and duplicate active parking.
+        """
+        # Strict Input Validation
+        is_valid_veh, veh_res = validate_vehicle_registration(vehicle_number)
+        if not is_valid_veh:
+            return {"success": False, "message": veh_res}
+        normalized_num = veh_res
+
+        is_valid_contact, contact_res = validate_driver_contact_number(driver_contact)
+        if not is_valid_contact:
+            return {"success": False, "message": contact_res}
+        clean_contact = contact_res
+
+        target_slot = self.get_slot_by_id(slot_id)
+        if not target_slot:
+            return {"success": False, "message": f"Slot ID {slot_id} not found."}
+
+        if target_slot.is_enabled == 0:
+            return {"success": False, "message": f"Slot {target_slot.slot_number} is disabled and cannot be reserved."}
+
+        if target_slot.slot_type != "Reserved":
+            return {"success": False, "message": f"Slot {target_slot.slot_number} is a Normal bay. Only designated Reserved bays can be reserved."}
+
+        if not target_slot.is_available():
+            return {"success": False, "message": f"Slot {target_slot.slot_number} is currently {target_slot.status.upper()} and cannot be reserved."}
+
+        if not target_slot.is_eligible_for(category):
+            return {"success": False, "message": f"Incompatible category! Slot {target_slot.slot_number} accommodates {target_slot.category}, not {category}."}
+
+        # Duplicate Checks
+        if normalized_num in self.active_vehicles:
+            parked_slot = self.active_vehicles[normalized_num]["slot_number"]
+            return {"success": False, "message": f"Vehicle {normalized_num} is already parked in Slot {parked_slot}."}
+
+        if normalized_num in self.active_reservations:
+            res_info = self.active_reservations[normalized_num]
+            return {"success": False, "message": f"Vehicle {normalized_num} already has an active reservation for Slot {res_info['slot_number']}."}
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO reservations (slot_id, slot_number, vehicle_number, category, driver_contact, status, created_at)
+                VALUES (?, ?, ?, ?, ?, 'active', ?)
+            """, (target_slot.id, target_slot.slot_number, normalized_num, category, clean_contact, now_str))
+            res_id = cursor.lastrowid
+
+            cursor.execute("""
+                UPDATE slots
+                SET status = 'reserved', current_vehicle = ?
+                WHERE id = ?
+            """, (normalized_num, target_slot.id))
+
+            conn.commit()
+
+            # Update in-memory
+            target_slot.status = "reserved"
+            target_slot.current_vehicle = normalized_num
+
+            self.active_reservations[normalized_num] = {
+                "id": res_id,
+                "slot_id": target_slot.id,
+                "slot_number": target_slot.slot_number,
+                "vehicle_number": normalized_num,
+                "category": category,
+                "driver_contact": clean_contact,
+                "status": "active",
+                "created_at": now_str
+            }
+
+            # If vehicle was queued, remove it from waiting queue
+            self.remove_from_waiting_queue(normalized_num)
+
+            summary = self.get_dashboard_summary()
+            return {
+                "success": True,
+                "slot_id": target_slot.id,
+                "slot_number": target_slot.slot_number,
+                "category": target_slot.category,
+                "new_status": "reserved",
+                "vehicle_number": normalized_num,
+                "summary": summary,
+                "message": f"Slot {target_slot.slot_number} ({target_slot.category}) successfully reserved for vehicle {normalized_num}."
+            }
+        except Exception as e:
+            conn.rollback()
+            return {"success": False, "message": f"Database error reserving slot: {str(e)}"}
+        finally:
+            conn.close()
+
+    def cancel_reservation(self, slot_id: int):
+        """Cancels an active reservation and frees the Reserved slot."""
+        target_slot = self.get_slot_by_id(slot_id)
+        if not target_slot:
+            return {"success": False, "message": f"Slot ID {slot_id} not found."}
+
+        if target_slot.status != "reserved":
+            return {"success": False, "message": f"Slot {target_slot.slot_number} is not currently reserved."}
+
+        veh_num = target_slot.current_vehicle
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE reservations
+                SET status = 'cancelled'
+                WHERE slot_id = ? AND status = 'active'
+            """, (slot_id,))
+
+            cursor.execute("""
+                UPDATE slots
+                SET status = 'available', current_vehicle = NULL
+                WHERE id = ?
+            """, (slot_id,))
+
+            conn.commit()
+
+            target_slot.status = "available"
+            target_slot.current_vehicle = None
+
+            if veh_num and veh_num in self.active_reservations:
+                del self.active_reservations[veh_num]
+
+            summary = self.get_dashboard_summary()
+            return {
+                "success": True,
+                "slot_id": target_slot.id,
+                "slot_number": target_slot.slot_number,
+                "category": target_slot.category,
+                "new_status": "available",
+                "summary": summary,
+                "message": f"Reservation for Slot {target_slot.slot_number} cancelled. Slot is now AVAILABLE."
+            }
+        except Exception as e:
+            conn.rollback()
+            return {"success": False, "message": f"Database error cancelling reservation: {str(e)}"}
+        finally:
+            conn.close()
+
+    def toggle_slot_reservation(self, slot_id: int, vehicle_number: str = None, category: str = None, driver_contact: str = None):
+        """
+        Toggles slot reservation status (preserves backward compatibility with existing tests and AJAX):
+        - If reserved, unreserves it.
+        - If available, reserves it.
+        """
+        target_slot = self.get_slot_by_id(slot_id)
+        if not target_slot:
+            return {"success": False, "message": f"Slot ID {slot_id} not found."}
+
+        if target_slot.status == "occupied":
+            return {
+                "success": False,
+                "message": f"Cannot reserve Slot {target_slot.slot_number} because it is currently occupied by vehicle {target_slot.current_vehicle}."
+            }
+
+        if target_slot.status == "reserved":
+            return self.cancel_reservation(slot_id)
+
+        # Available slot -> reserve
+        v_num = vehicle_number or f"RESV{target_slot.slot_number.replace('-', '')}"
+        v_cat = category or target_slot.category
+        v_contact = driver_contact or "9876543210"
+
+        # If slot is Normal type in legacy call, temporarily allow reservation for backward compatibility
+        if target_slot.slot_type != "Reserved":
+            target_slot.slot_type = "Reserved"
+            conn = self.get_connection()
+            conn.execute("UPDATE slots SET slot_type = 'Reserved' WHERE id = ?", (slot_id,))
+            conn.commit()
+            conn.close()
+
+        return self.reserve_slot(slot_id, v_num, v_cat, v_contact)
+
+    # =========================================================================
+    # VEHICLE ENTRY & ALLOCATION (REQUIREMENT 4)
     # =========================================================================
     def park_vehicle(self, vehicle_number: str, category: str, driver_contact: str = "", preferred_slot_id: int = None, strict_validation: bool = True):
         """
@@ -227,14 +481,10 @@ class ParkingManager:
         1. Strict Input Validation (Requirement 4)
         2. Duplicate Check via HASHING: O(1) active_vehicles lookup
         3. Duplicate Check in FIFO Waiting Queue: O(M)
-        4. Slot Selection using LINEAR SEARCH: O(N) with strict compatibility
-        5. If eligible slot found:
-           - Update slot status to 'occupied'
-           - Add to active_vehicles dictionary: O(1)
-           - Persist to SQLite
-        6. If no eligible slot found (Category full/unavailable):
-           - Enqueue into collections.deque: O(1) in FIFO order
-           - Persist to waiting_queue table
+        4. Active Reservation Check: If vehicle has an active reservation, assign that exact reserved slot.
+           Duration and charges begin ONLY upon check-in!
+        5. Normal Walk-in Allocation: If no reservation, search for compatible available NORMAL slot.
+        6. If no eligible Normal slot found: Enqueue into FIFO collections.deque.
         """
         # Strict validation
         if strict_validation:
@@ -272,33 +522,88 @@ class ParkingManager:
                     "message": f"Duplicate entry! Vehicle {normalized_num} is already waiting in queue at Position #{item['queue_position']}."
                 }
 
-        # 3. Slot Selection: Preferred Slot (if strictly eligible) or Linear Search
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 3. Check for Active Reservation (Requirement 4)
+        active_res = self.get_active_reservation(normalized_num)
+        if active_res:
+            res_slot_id = active_res["slot_id"]
+            res_slot = self.get_slot_by_id(res_slot_id)
+            if res_slot and (res_slot.status == "reserved" or res_slot.is_available()) and res_slot.is_eligible_for(category):
+                conn = self.get_connection()
+                cursor = conn.cursor()
+                try:
+                    cursor.execute("""
+                        UPDATE reservations
+                        SET status = 'fulfilled'
+                        WHERE id = ?
+                    """, (active_res["id"],))
+
+                    cursor.execute("""
+                        UPDATE slots
+                        SET status = 'occupied', current_vehicle = ?, entry_time = ?
+                        WHERE id = ?
+                    """, (normalized_num, now_str, res_slot.id))
+
+                    cursor.execute("""
+                        INSERT INTO active_sessions (vehicle_number, category, slot_id, slot_number, driver_contact, entry_time)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (normalized_num, category, res_slot.id, res_slot.slot_number, clean_contact or active_res.get("driver_contact", ""), now_str))
+
+                    conn.commit()
+
+                    res_slot.status = "occupied"
+                    res_slot.current_vehicle = normalized_num
+                    res_slot.entry_time = now_str
+
+                    if normalized_num in self.active_reservations:
+                        del self.active_reservations[normalized_num]
+
+                    self.active_vehicles[normalized_num] = {
+                        "vehicle_number": normalized_num,
+                        "category": category,
+                        "slot_id": res_slot.id,
+                        "slot_number": res_slot.slot_number,
+                        "driver_contact": clean_contact or active_res.get("driver_contact", ""),
+                        "entry_time": now_str
+                    }
+
+                    return {
+                        "success": True,
+                        "status": "allocated",
+                        "slot_number": res_slot.slot_number,
+                        "slot_id": res_slot.id,
+                        "category": category,
+                        "message": f"Active reservation honored! Slot {res_slot.slot_number} ({res_slot.category}) checked in for vehicle {normalized_num}."
+                    }
+                except Exception as e:
+                    conn.rollback()
+                    return {"success": False, "message": f"Database error during reservation check-in: {str(e)}"}
+                finally:
+                    conn.close()
+
+        # 4. Normal Walk-in Allocation (Requirement 4: only available Normal slots)
         target_slot = None
         if preferred_slot_id:
             for slot in self.slots:
-                if slot.id == preferred_slot_id and slot.is_available() and slot.is_eligible_for(category):
+                if slot.id == preferred_slot_id and slot.is_available() and slot.slot_type == "Normal" and slot.is_eligible_for(category):
                     target_slot = slot
                     break
 
         if not target_slot:
-            # Linear Search for the first eligible available slot with strict category compatibility
-            target_slot = self.find_first_available_slot(category)
+            target_slot = self.find_first_available_slot(category, slot_type="Normal")
 
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # 4. If an eligible slot is found, allocate it!
+        # 5. If eligible Normal slot found, allocate it!
         if target_slot:
             conn = self.get_connection()
             cursor = conn.cursor()
             try:
-                # Update DB slot
                 cursor.execute("""
                     UPDATE slots
                     SET status = 'occupied', current_vehicle = ?, entry_time = ?
                     WHERE id = ?
                 """, (normalized_num, now_str, target_slot.id))
 
-                # Insert Active Session
                 cursor.execute("""
                     INSERT INTO active_sessions (vehicle_number, category, slot_id, slot_number, driver_contact, entry_time)
                     VALUES (?, ?, ?, ?, ?, ?)
@@ -306,12 +611,10 @@ class ParkingManager:
 
                 conn.commit()
 
-                # Update In-Memory Structures
                 target_slot.status = "occupied"
                 target_slot.current_vehicle = normalized_num
                 target_slot.entry_time = now_str
 
-                # HASH MAP INSERTION: O(1)
                 self.active_vehicles[normalized_num] = {
                     "vehicle_number": normalized_num,
                     "category": category,
@@ -335,7 +638,7 @@ class ParkingManager:
             finally:
                 conn.close()
 
-        # 5. No eligible slot available -> Enqueue into FIFO Waiting Queue (collections.deque)
+        # 6. No eligible Normal slot available -> Enqueue into FIFO Waiting Queue (collections.deque)
         queue_pos = len(self.waiting_queue) + 1
         queue_item = {
             "vehicle_number": normalized_num,
@@ -354,14 +657,13 @@ class ParkingManager:
             """, (normalized_num, category, clean_contact, queue_pos, now_str))
             conn.commit()
 
-            # QUEUE ENQUEUE: collections.deque.append() O(1)
             self.waiting_queue.append(queue_item)
 
             return {
                 "success": True,
                 "status": "queued",
                 "queue_position": queue_pos,
-                "message": f"All eligible {category} slots are currently occupied or reserved. Vehicle {normalized_num} added to Waiting List at Position #{queue_pos}."
+                "message": f"All eligible {category} normal bays are currently occupied. Vehicle {normalized_num} added to Waiting List at Position #{queue_pos}."
             }
         except Exception as e:
             conn.rollback()
@@ -389,7 +691,6 @@ class ParkingManager:
 
         # 1. O(1) Hash Map Lookup / Idempotency Check
         if normalized_num not in self.active_vehicles:
-            # Check if recently billed in parking_history to guarantee idempotency on retries/double-clicks
             conn = self.get_connection()
             cursor = conn.cursor()
             cursor.execute(
@@ -448,7 +749,7 @@ class ParkingManager:
         exit_dt = datetime.now()
         exit_time_str = exit_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-        # Duration Calculation defensively (handles None, empty string, int, or string numbers)
+        # Duration Calculation defensively
         duration_minutes = None
         if simulated_minutes is not None and str(simulated_minutes).strip() != "":
             try:
@@ -532,8 +833,11 @@ class ParkingManager:
                 "fee": total_fee
             }
 
-            # 4. Check FIFO Waiting Queue to allocate to the next strictly eligible waiting vehicle
-            queue_allocation = self._dispatch_queue_for_slot(target_slot, conn)
+            # 4. Check FIFO Waiting Queue to allocate to next strictly eligible waiting vehicle
+            # (Applies only to Normal bays: Requirement 4)
+            queue_allocation = None
+            if target_slot and target_slot.slot_type == "Normal" and target_slot.is_enabled == 1:
+                queue_allocation = self._dispatch_queue_for_slot(target_slot, conn)
 
             return {
                 "success": True,
@@ -550,12 +854,11 @@ class ParkingManager:
 
     def _dispatch_queue_for_slot(self, slot: Slot, conn):
         """
-        Internal FIFO Queue Dispatcher (Requirement 5):
+        Internal FIFO Queue Dispatcher (Requirement 3 & 4):
         Finds the first waiting vehicle from collections.deque that strictly matches `slot.category`.
-        Removes it from the queue and parks it in the freed slot.
-        Does NOT count waiting time as active parking time (sets active entry_time to dispatch timestamp).
+        Enforces that queued vehicles are allocated only to available Normal slots.
         """
-        if not slot or not slot.is_available() or not self.waiting_queue:
+        if not slot or not slot.is_available() or slot.slot_type != "Normal" or not self.waiting_queue:
             return None
 
         eligible_index = -1
@@ -580,7 +883,6 @@ class ParkingManager:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         cursor = conn.cursor()
-        # Remove from waiting_queue table
         cursor.execute("DELETE FROM waiting_queue WHERE vehicle_number = ?", (veh_num,))
 
         # Update remaining queue positions in DB and deque
@@ -588,7 +890,7 @@ class ParkingManager:
             item["queue_position"] = new_pos
             cursor.execute("UPDATE waiting_queue SET queue_position = ? WHERE vehicle_number = ?", (new_pos, item["vehicle_number"]))
 
-        # Occupy the slot with the dequeued vehicle starting now (waiting time excluded from billing duration)
+        # Occupy slot starting now (waiting time excluded from billing duration)
         cursor.execute("""
             UPDATE slots
             SET status = 'occupied', current_vehicle = ?, entry_time = ?
@@ -639,14 +941,12 @@ class ParkingManager:
         if found_index == -1:
             return {"success": False, "message": f"Vehicle {normalized_num} not found in waiting queue."}
 
-        # Remove from deque
         del self.waiting_queue[found_index]
 
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
             cursor.execute("DELETE FROM waiting_queue WHERE vehicle_number = ?", (normalized_num,))
-            # Re-index queue positions
             for new_pos, item in enumerate(self.waiting_queue, start=1):
                 item["queue_position"] = new_pos
                 cursor.execute("UPDATE waiting_queue SET queue_position = ? WHERE vehicle_number = ?", (new_pos, item["vehicle_number"]))
@@ -659,59 +959,273 @@ class ParkingManager:
             conn.close()
 
     # =========================================================================
-    # SLOT RESERVATION TOGGLE (STAY IN POSITION & UPDATE IN PLACE)
+    # ADMIN SLOT MANAGEMENT (REQUIREMENT 2)
     # =========================================================================
-    def toggle_slot_reservation(self, slot_id: int):
-        """
-        Toggles a slot between 'available' and 'reserved' (Requirement 6):
-        - Prevents reserving an occupied slot.
-        - Prevents duplicate reservations.
-        - Dispatches waiting queue if unreserved.
-        """
-        target_slot = None
-        for slot in self.slots:
-            if slot.id == slot_id:
-                target_slot = slot
-                break
+    def add_slot(self, slot_number: str, category: str, slot_type: str = "Normal", area: str = "General", is_enabled: int = 1):
+        """Persistently adds a new slot to the database."""
+        num = (slot_number or "").strip().upper()
+        if not num:
+            return {"success": False, "message": "Slot ID cannot be empty."}
 
-        if not target_slot:
-            return {"success": False, "message": f"Slot ID {slot_id} not found."}
+        if self.get_slot_by_number(num):
+            return {"success": False, "message": f"Slot {num} already exists. Slot ID must be unique."}
 
-        if target_slot.status == "occupied":
-            return {
-                "success": False,
-                "message": f"Cannot reserve Slot {target_slot.slot_number} because it is currently occupied by vehicle {target_slot.current_vehicle}."
-            }
+        cat = (category or "").strip()
+        if cat not in ("Two-Wheeler", "Four-Wheeler", "EV", "EV Charging"):
+            return {"success": False, "message": f"Invalid category {category}. Must be Two-Wheeler, Four-Wheeler, or EV."}
+        if cat == "EV":
+            cat = "EV Charging"
 
-        new_status = "reserved" if target_slot.status == "available" else "available"
+        stype = (slot_type or "").strip()
+        if stype not in ("Normal", "Reserved"):
+            stype = "Normal"
+
+        area_val = (area or "").strip() or "General"
+        enabled_val = 1 if int(is_enabled) == 1 else 0
 
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute("UPDATE slots SET status = ? WHERE id = ?", (new_status, slot_id))
+            cursor.execute("""
+                INSERT INTO slots (slot_number, category, status, slot_type, area, is_enabled)
+                VALUES (?, ?, 'available', ?, ?, ?)
+            """, (num, cat, stype, area_val, enabled_val))
             conn.commit()
-            target_slot.status = new_status
-            
-            # If the slot was made available, check if waiting vehicles for this category can use it
-            queue_allocation = None
-            if new_status == "available":
-                queue_allocation = self._dispatch_queue_for_slot(target_slot, conn)
+        except Exception as e:
+            conn.rollback()
+            return {"success": False, "message": f"Database error adding slot: {str(e)}"}
+        finally:
+            conn.close()
 
-            summary = self.get_dashboard_summary()
+        self.reload_from_db()
+        return {"success": True, "message": f"Slot {num} ({cat} - {stype}) successfully added to {area_val}."}
+
+    def edit_slot(self, slot_id: int, category: str, slot_type: str, area: str, is_enabled: int = 1):
+        """Safely edits an existing slot without breaking parking records or active sessions."""
+        target = self.get_slot_by_id(slot_id)
+        if not target:
+            return {"success": False, "message": f"Slot ID {slot_id} not found."}
+
+        cat = (category or "").strip()
+        if cat not in ("Two-Wheeler", "Four-Wheeler", "EV", "EV Charging"):
+            return {"success": False, "message": f"Invalid category {category}."}
+        if cat == "EV":
+            cat = "EV Charging"
+
+        stype = (slot_type or "").strip()
+        if stype not in ("Normal", "Reserved"):
+            stype = "Normal"
+
+        enabled_val = 1 if int(is_enabled) == 1 else 0
+
+        # Safety check: if currently occupied, prevent changing category or disabling
+        if target.status == "occupied":
+            if target.category != cat:
+                return {"success": False, "message": f"Cannot change category of Slot {target.slot_number} while occupied by vehicle {target.current_vehicle}."}
+            if enabled_val == 0:
+                return {"success": False, "message": f"Cannot disable Slot {target.slot_number} while occupied by vehicle {target.current_vehicle}."}
+
+        area_val = (area or "").strip() or target.area
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            new_status = target.status
+            if enabled_val == 0 and target.status == "available":
+                new_status = "disabled"
+            elif enabled_val == 1 and target.status == "disabled":
+                new_status = "available"
+
+            cursor.execute("""
+                UPDATE slots
+                SET category = ?, slot_type = ?, area = ?, is_enabled = ?, status = ?
+                WHERE id = ?
+            """, (cat, stype, area_val, enabled_val, new_status, slot_id))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            return {"success": False, "message": f"Database error editing slot: {str(e)}"}
+        finally:
+            conn.close()
+
+        self.reload_from_db()
+
+        # If newly enabled Normal slot, check waiting queue
+        if enabled_val == 1 and stype == "Normal" and target.status != "occupied":
+            updated_slot = self.get_slot_by_id(slot_id)
+            if updated_slot and updated_slot.is_available():
+                conn2 = self.get_connection()
+                self._dispatch_queue_for_slot(updated_slot, conn2)
+                conn2.close()
+
+        return {"success": True, "message": f"Slot {target.slot_number} details successfully updated."}
+
+    def toggle_slot_status(self, slot_id: int):
+        """Safely enables or disables a slot."""
+        target = self.get_slot_by_id(slot_id)
+        if not target:
+            return {"success": False, "message": f"Slot ID {slot_id} not found."}
+
+        if target.status == "occupied" and target.is_enabled == 1:
+            return {"success": False, "message": f"Cannot disable Slot {target.slot_number} because it is occupied by vehicle {target.current_vehicle}."}
+
+        new_enabled = 0 if target.is_enabled == 1 else 1
+        new_status = "disabled" if new_enabled == 0 else "available"
+        if target.status == "occupied":
+            new_status = "occupied"
+        elif target.status == "reserved" and new_enabled == 0:
+            new_status = "disabled"
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("UPDATE slots SET is_enabled = ?, status = ? WHERE id = ?", (new_enabled, new_status, slot_id))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            return {"success": False, "message": f"Database error updating slot status: {str(e)}"}
+        finally:
+            conn.close()
+
+        self.reload_from_db()
+
+        status_str = "ENABLED" if new_enabled == 1 else "DISABLED"
+        queue_alloc = None
+        if new_enabled == 1 and target.slot_type == "Normal":
+            reloaded = self.get_slot_by_id(slot_id)
+            if reloaded and reloaded.is_available():
+                conn2 = self.get_connection()
+                queue_alloc = self._dispatch_queue_for_slot(reloaded, conn2)
+                conn2.close()
+
+        return {
+            "success": True,
+            "is_enabled": new_enabled,
+            "status": new_status,
+            "queue_allocation": queue_alloc,
+            "message": f"Slot {target.slot_number} is now {status_str}."
+        }
+
+    def delete_slot(self, slot_number: str, category: str, slot_type: str, area: str):
+        """
+        Safely deletes a slot only when all four details match an existing record (Requirement 3):
+        1. Slot Number / Bay ID
+        2. Vehicle Category (Four-Wheeler, Two-Wheeler, or EV)
+        3. Slot Type (Normal or Reserved)
+        4. Applicable Parking Area
+
+        Strict safety checks:
+        - Must require all four details and match them against the same slot record.
+        - Fails if slot does not exist or any detail does not match.
+        - Prevents deletion if slot has an active vehicle, active reservation, or linked active records.
+        - Informs admin of the reason and suggests disabling instead.
+        - Never alters unrelated slots, vehicles, reservations, billing, or history.
+        """
+        num_raw = (slot_number or "").strip().upper()
+        cat_raw = (category or "").strip()
+        stype_raw = (slot_type or "").strip()
+        area_raw = (area or "").strip()
+
+        if not num_raw or not cat_raw or not stype_raw or not area_raw:
+            return {
+                "success": False,
+                "message": "All four slot details are required: Slot Number, Vehicle Category, Slot Type, and Parking Area."
+            }
+
+        # Find slot by number (exact or hyphen-normalized match)
+        target = self.get_slot_by_number(num_raw)
+        if not target:
+            num_clean = num_raw.replace("-", "")
+            for s in self.slots:
+                if s.slot_number.upper().replace("-", "") == num_clean:
+                    target = s
+                    break
+
+        if not target:
+            return {
+                "success": False,
+                "message": f"Slot '{num_raw}' does not exist in facility records."
+            }
+
+        # Normalize categories for comparison: EV and EV Charging are equivalent
+        target_cat = "EV" if target.category in ("EV", "EV Charging") else target.category
+        input_cat = "EV" if cat_raw in ("EV", "EV Charging") else cat_raw
+
+        # Match category
+        if target_cat.lower() != input_cat.lower():
+            return {
+                "success": False,
+                "message": f"Slot detail mismatch: Vehicle Category does not match slot {target.slot_number} (expected '{target.category}', received '{cat_raw}'). Deletion aborted."
+            }
+
+        # Match slot type
+        if target.slot_type.lower() != stype_raw.lower():
+            return {
+                "success": False,
+                "message": f"Slot detail mismatch: Slot Type does not match slot {target.slot_number} (expected '{target.slot_type}', received '{stype_raw}'). Deletion aborted."
+            }
+
+        # Match parking area (case-insensitive stripped match)
+        if (target.area or "General").strip().lower() != area_raw.lower():
+            return {
+                "success": False,
+                "message": f"Slot detail mismatch: Parking Area does not match slot {target.slot_number} (expected '{target.area or 'General'}', received '{area_raw}'). Deletion aborted."
+            }
+
+        # Safety Check 1: Active vehicle parked in the slot
+        if target.status == "occupied" or target.current_vehicle:
+            return {
+                "success": False,
+                "message": f"Cannot delete Slot {target.slot_number} because it is currently occupied with an active parked vehicle ({target.current_vehicle or 'in use'}). Active records must be preserved. You can disable the slot instead to prevent new allocations."
+            }
+
+        # Safety Check 2: Active reservation on the slot
+        if target.status == "reserved":
+            return {
+                "success": False,
+                "message": f"Cannot delete Slot {target.slot_number} because it is currently reserved. You can cancel the reservation or disable the slot instead."
+            }
+
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            # Check active sessions table
+            cursor.execute("SELECT COUNT(*) FROM active_sessions WHERE slot_id = ? OR slot_number = ?", (target.id, target.slot_number))
+            if cursor.fetchone()[0] > 0:
+                return {
+                    "success": False,
+                    "message": f"Cannot delete Slot {target.slot_number} because an active parking session is attached to it. Active records must be preserved. You can disable the slot instead."
+                }
+
+            # Check active reservations table
+            cursor.execute("SELECT COUNT(*) FROM reservations WHERE (slot_id = ? OR slot_number = ?) AND status = 'active'", (target.id, target.slot_number))
+            if cursor.fetchone()[0] > 0:
+                return {
+                    "success": False,
+                    "message": f"Cannot delete Slot {target.slot_number} because an active reservation is linked to it. Active records must be preserved. You can cancel the reservation or disable the slot instead."
+                }
+
+            # Perform persistent deletion from slots table
+            cursor.execute("DELETE FROM slots WHERE id = ?", (target.id,))
+            conn.commit()
+
+            # Reload in-memory data structures immediately
+            self.reload_from_db()
 
             return {
                 "success": True,
-                "slot_id": target_slot.id,
-                "slot_number": target_slot.slot_number,
-                "category": target_slot.category,
-                "new_status": target_slot.status,
-                "queue_allocation": queue_allocation,
-                "summary": summary,
-                "message": f"Slot {target_slot.slot_number} status updated to {target_slot.status.upper()}."
+                "message": f"Slot {target.slot_number} ({target.category}, {target.slot_type}, {target.area}) was successfully deleted from facility records.",
+                "deleted_slot": {
+                    "id": target.id,
+                    "slot_number": target.slot_number,
+                    "category": target.category,
+                    "slot_type": target.slot_type,
+                    "area": target.area
+                }
             }
         except Exception as e:
             conn.rollback()
-            return {"success": False, "message": f"Database error: {str(e)}"}
+            return {"success": False, "message": f"Database error during slot deletion: {str(e)}"}
         finally:
             conn.close()
 
@@ -893,33 +1407,50 @@ class ParkingManager:
     # DASHBOARD & METRICS COMPUTATION
     # =========================================================================
     def get_dashboard_summary(self):
-        """Calculates live parking lot statistics."""
+        """Calculates live parking lot statistics across all bays and categories."""
         total_slots = len(self.slots)
-        available_slots = sum(1 for s in self.slots if s.status == "available")
+        available_slots = sum(1 for s in self.slots if s.is_available())
         occupied_slots = sum(1 for s in self.slots if s.status == "occupied")
         reserved_slots = sum(1 for s in self.slots if s.status == "reserved")
+        disabled_slots = sum(1 for s in self.slots if s.is_enabled == 0)
+        normal_slots = sum(1 for s in self.slots if s.slot_type == "Normal")
+        reserved_type_slots = sum(1 for s in self.slots if s.slot_type == "Reserved")
         waiting_count = len(self.waiting_queue)
         occupancy_pct = round((occupied_slots / total_slots) * 100, 1) if total_slots > 0 else 0
 
-        categories = ["Two-Wheeler", "Four-Wheeler", "EV Charging", "Reserved"]
+        categories = ["Two-Wheeler", "Four-Wheeler", "EV Charging"]
         category_stats = {}
         for cat in categories:
             total_cat = sum(1 for s in self.slots if s.category == cat)
             occupied_cat = sum(1 for s in self.slots if s.category == cat and s.status == "occupied")
-            available_cat = sum(1 for s in self.slots if s.category == cat and s.status == "available")
+            available_cat = sum(1 for s in self.slots if s.category == cat and s.is_available())
             reserved_cat = sum(1 for s in self.slots if s.category == cat and s.status == "reserved")
+            disabled_cat = sum(1 for s in self.slots if s.category == cat and s.is_enabled == 0)
             category_stats[cat] = {
                 "total": total_cat,
                 "occupied": occupied_cat,
                 "available": available_cat,
-                "reserved": reserved_cat
+                "reserved": reserved_cat,
+                "disabled": disabled_cat
             }
+
+        # Legacy fallback if 'Reserved' key is accessed by existing templates or APIs
+        category_stats["Reserved"] = {
+            "total": reserved_type_slots,
+            "occupied": sum(1 for s in self.slots if s.slot_type == "Reserved" and s.status == "occupied"),
+            "available": sum(1 for s in self.slots if s.slot_type == "Reserved" and s.is_available()),
+            "reserved": reserved_slots,
+            "disabled": sum(1 for s in self.slots if s.slot_type == "Reserved" and s.is_enabled == 0)
+        }
 
         return {
             "total_slots": total_slots,
             "available_slots": available_slots,
             "occupied_slots": occupied_slots,
             "reserved_slots": reserved_slots,
+            "disabled_slots": disabled_slots,
+            "normal_slots": normal_slots,
+            "reserved_type_slots": reserved_type_slots,
             "waiting_count": waiting_count,
             "occupancy_pct": occupancy_pct,
             "category_stats": category_stats

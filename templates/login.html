@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — SmartPark Facility Management</title>
+  
+  <!-- CSS Styles -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="login-body">
+
+  <div class="login-wrapper">
+    
+    <!-- BRANDING TOP -->
+    <div class="login-brand-header">
+      <div class="brand-icon-lg">P</div>
+      <h1 class="brand-title">SmartPark</h1>
+      <p class="brand-tagline">Professional Parking Facility Management System</p>
+    </div>
+
+    <!-- FLASH MESSAGES -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="login-flash-container">
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">
+              <span>{{ message }}</span>
+              <button class="alert-close" type="button" onclick="this.parentElement.remove();">&times;</button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <!-- WHITE ROUNDED CARD (INSPIRED BY SMARTPARK MOCKUP) -->
+    <div class="login-card-container">
+      
+      <div class="login-card-intro">
+        <h2>Welcome to SmartPark Portal</h2>
+        <p>Please select your portal to continue into the facility management workspace.</p>
+      </div>
+
+      <div class="login-sections-grid">
+        
+        <!-- BLUE USER LOGIN SECTION -->
+        <div class="login-section-box user-section">
+          <div class="section-badge-pill badge-user">
+            <span>🚗</span>
+            <span>User Portal</span>
+          </div>
+          
+          <h3 class="section-heading">Driver &amp; User Login</h3>
+          <p class="section-subtext">Access real-time parking maps, active sessions, and instant vehicle reservations.</p>
+          
+          <form action="{{ url_for('login_user') }}" method="POST" class="auth-form">
+            <div class="form-group">
+              <label class="form-label" for="userEmail">Email Address</label>
+              <input 
+                type="email" 
+                class="form-control" 
+                id="userEmail" 
+                name="email" 
+                placeholder="e.g. driver@smartpark.com" 
+                required 
+                autocomplete="email"
+              >
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="userPassword">Password</label>
+              <input 
+                type="password" 
+                class="form-control" 
+                id="userPassword" 
+                name="password" 
+                placeholder="Enter any password" 
+                required 
+                autocomplete="current-password"
+              >
+            </div>
+
+            <button type="submit" class="btn btn-user-login" id="btnUserLogin">
+              <span>Sign In as User &rarr;</span>
+            </button>
+            
+            <small class="auth-note">
+              ✓ Open access: Enter any valid email &amp; password to sign in.
+            </small>
+          </form>
+        </div>
+
+        <!-- DIVIDER (DESKTOP VERTICAL / MOBILE HORIZONTAL) -->
+        <div class="login-divider-col">
+          <div class="divider-line"></div>
+          <span class="divider-text">OR</span>
+          <div class="divider-line"></div>
+        </div>
+
+        <!-- GREEN ADMIN LOGIN SECTION -->
+        <div class="login-section-box admin-section">
+          <div class="section-badge-pill badge-admin">
+            <span>🛡️</span>
+            <span>Administrator Portal</span>
+          </div>
+          
+          <h3 class="section-heading">Facility Administrator</h3>
+          <p class="section-subtext">Manage bay configurations, add/edit slots, toggle bay status, and control operations.</p>
+          
+          <form action="{{ url_for('login_admin') }}" method="POST" class="auth-form">
+            <div class="form-group">
+              <label class="form-label" for="adminEmail">Admin Email</label>
+              <input 
+                type="email" 
+                class="form-control" 
+                id="adminEmail" 
+                name="email" 
+                placeholder="e.g. admin@smartpark.com" 
+                required 
+                autocomplete="username"
+              >
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="adminPassword">Admin Password</label>
+              <input 
+                type="password" 
+                class="form-control" 
+                id="adminPassword" 
+                name="password" 
+                placeholder="•••••" 
+                required 
+                autocomplete="current-password"
+              >
+            </div>
+
+            <button type="submit" class="btn btn-admin-login" id="btnAdminLogin">
+              <span>Sign In as Administrator &rarr;</span>
+            </button>
+            
+            <small class="auth-note text-admin">
+              🔒 Authorized personnel only. Requires administrator credentials.
+            </small>
+          </form>
+        </div>
+
+      </div>
+
+      <!-- FOOTER NOTE INSIDE CARD -->
+      <div class="login-card-footer">
+        <span>⚡ SmartPark Automated Slot Allocation &bull; Protected by Session Authorization</span>
+      </div>
+
+    </div>
+
+  </div>
+
+</body>
+</html>
